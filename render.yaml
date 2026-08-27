@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: scriptflow-pro
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: NPM_CONFIG_LEGACY_PEER_DEPS
+        value: true
+      - key: VITE_FIREBASE_API_KEY
+        value: AIzaSyD_Ry0pM7EKSDJeTegt0rY5muiw-xCgrhw
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        value: scriptflow-pro-2cf4c.firebaseapp.com
+      - key: VITE_FIREBASE_PROJECT_ID
+        value: scriptflow-pro-2cf4c
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        value: scriptflow-pro-2cf4c.firebasestorage.app
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        value: 250157640936
+      - key: VITE_FIREBASE_APP_ID
+        value: 1:250157640936:web:cd6218470c302b305aed5d
+      - key: DISABLE_HMR
+        value: true

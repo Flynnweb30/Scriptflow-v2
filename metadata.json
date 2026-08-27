@@ -1,0 +1,6 @@
+{
+  "name": "ScriptFlow Pro",
+  "description": "Smart CRM & Call Scripting platform with appointment tracking, intelligent transcript import, analytics, and objection handling.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

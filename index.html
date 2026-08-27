@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    
+    <!-- Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;
+      style-src 'self' 'unsafe-inline' https:;
+      img-src 'self' data: https: http:;
+      font-src 'self' data: https: fonts.gstatic.com https://fonts.googleapis.com;
+      connect-src 'self' https: http: wss:;
+      frame-src 'self' https:;
+      media-src 'self' https:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
+    
+    <title>ScriptFlow Pro · Smart CRM</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <!-- Preconnect for faster font loading -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <style>
+      /* Loading screen styles */
+      #loadingScreen {
+        position: fixed;
+        inset: 0;
+        background: #030712;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        flex-direction: column;
+        gap: 20px;
+        transition: opacity 0.5s ease;
+      }
+      
+      #loadingScreen.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      
+      .loading-icon {
+        font-size: 48px;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      
+      .loading-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: #f1f5f9;
+      }
+      
+      .loading-subtitle {
+        font-size: 14px;
+        color: #94a3b8;
+      }
+      
+      .loading-bar-track {
+        width: 200px;
+        height: 4px;
+        background: #1e293b;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      
+      .loading-bar {
+        width: 0%;
+        height: 100%;
+        background: #2563eb;
+        transition: width 0.5s ease;
+      }
+      
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+      }
+    .loading-icon img { width: 48px; height: 48px; display: block; }
+</style>
+  </head>
+  <body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen">
+      <div class="loading-icon" aria-label="ScriptFlow Pro"><img src="/favicon.svg" alt="" /></div>
+      <div class="loading-title">ScriptFlow Pro</div>
+      <div class="loading-subtitle">Loading...</div>
+      <div class="loading-bar-track">
+        <div id="loadingProgress" class="loading-bar"></div>
+      </div>
+    </div>
+
+    <!-- App Root -->
+    <div id="root"></div>
+    
+    <!-- Main App Script -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
