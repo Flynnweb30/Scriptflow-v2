@@ -1,54 +1,88 @@
-# ScriptFlow Pro v2.8 — QA / Repair Report
+# ScriptFlow Pro v2.8.1 — Technical Audit & Repair Report
 
-## Scope
-Reviewed the supplied project source and repaired workflow/data-consistency issues while preserving the existing React/Vite/Firebase architecture and public component/service APIs.
+## Audit scope
+The supplied ZIP was unpacked and reviewed across the React/Vite application, Firebase/Firestore layer, UI components, services, configuration, deployment files, and legacy compatibility files.
 
-## Repairs applied
-- Centralized Firebase initialization so the app uses one Firestore/Auth runtime instead of parallel Firebase modules.
-- Kept the existing `config/firebase-config.ts` API as a compatibility layer.
-- Replaced the deprecated Firestore persistence path with the existing Firebase 11 persistent local cache implementation.
-- Fixed Firestore optimistic cache synchronization so appointments, scripts, tasks, and closers update the UI immediately and roll back cleanly on failed writes.
-- Fixed the script cache shape mismatch (array vs object), which could cause edits/favorites to behave inconsistently after subscription/cache updates.
-- Centralized closer selection for Quick Add, Bulk Actions, Smart Import, Transcript Studio, and appointment editing so Closer Management actually affects new workflows.
-- Added failure handling to bulk operations, task actions, appointment drag/drop, closer management, and Quick Add so failed writes do not leave controls stuck or silently reject promises.
-- Reset Quick Add transient fields to current defaults each time the modal opens.
-- Fixed Discord analytics preview generation to use the actual selected report preset and agent filter instead of undefined identifiers.
-- Fixed ICS all-day event end dates so exported calendar events have a valid next-day `DTEND`.
-- Revoked generated CSV/ICS object URLs after downloads.
-- Added the missing `useAuth` compatibility export for legacy auth components.
-- Consolidated the duplicate `AppContent` implementation into a compatibility re-export of `App.tsx`, leaving one application shell/workspace lifecycle as the source of truth.
-- Added missing Vite environment typings used by the Firebase configuration.
+## Verified source-level findings and repairs
 
-## Verification
-### Static TypeScript verification
-A TypeScript no-emit pass was executed against the application entry point and Vite environment declarations. No application-level diagnostics remained after filtering dependency-resolution errors.
+### Render / Vite
+- Converted `render.yaml` from a Node web service definition to a Render static-site Blueprint using `runtime: static`.
+- Configured `npm ci && npm run build` and `dist` as the publish directory.
+- Added the SPA `/* -> /index.html` rewrite.
+- Removed the duplicate `vite` dependency from `dependencies`; Vite is now a dev dependency only.
+- Moved Vite build/type tooling to `devDependencies`.
+- Removed the dangerous `clean` behavior that deleted `server.js`.
+- Corrected Vite's path alias configuration to avoid relying on an undeclared `__dirname` in an ESM config.
+- Kept `server.js` and the existing server-related packages intact for architectural compatibility, but the Render deployment no longer requires them.
 
-A broader source pass was also run. The remaining diagnostics are caused by the test container not having the project's npm dependencies installed; the source-level errors found during the audit were repaired.
+### Calling-script drag/reorder
+The supplied code did **not** contain a working script drag/drop implementation. The UI displayed a grip icon, but there were no `draggable`, `onDragStart`, `onDragOver`, or `onDrop` handlers for the calling-script list.
 
-### Dependency/build verification
-A full `npm ci` / Vite production build could not complete because the execution environment could not retrieve the npm registry packages within the bounded test window. This is an environment/dependency-download limitation, not a source-code failure.
+Implemented:
+- Native drag/drop reordering in the Sidebar.
+- Stable `order` values on scripts.
+- Persistent Firestore order writes using a batch operation.
+- Optimistic local cache/UI update with rollback on failure.
+- Deterministic sorting by `order`, with backward-compatible fallbacks for older scripts.
+- New scripts receive an order value.
+- Keyboard number shortcuts use the same persisted order.
+- Reordering does not alter script content, favorites, edit state, or selection.
+- Search mode disables reorder to prevent accidentally reordering a filtered subset.
 
-## Deployment prerequisites
-1. Run `npm ci` (or `npm install`) in an environment with npm registry access.
-2. Run `npm run lint` and `npm run build`.
-3. Configure the `VITE_FIREBASE_*` variables for the target Firebase project.
-4. Add the deployed domain to Firebase Authentication authorized domains.
-5. Deploy the included `firestore.rules` to the same Firebase project.
-6. If Discord sync is desired, configure the Discord webhook through the existing Discord configuration/environment path.
+### Script editing / reset / copy
+- Fixed script reset: it now restores the actual default template instead of merely incrementing the version.
+- Fixed copy handling so clipboard failures are surfaced instead of silently reporting success.
+- Fixed script deletion rollback so a failed Firestore delete restores the local cache.
 
-## Functional coverage reviewed
-- Firebase authentication/session lifecycle
-- Firestore workspace subscriptions and optimistic persistence
+### Firestore / persistence
+- Preserved the centralized Firebase initialization already present in the project.
+- Preserved Firebase 11 persistent Firestore local cache.
+- Added persistent script-order storage.
+- Preserved user-scoped Firestore queries and security-rule ownership model.
+- Existing optimistic appointment/task/closer persistence paths were retained.
+
+### Other reviewed workflows
+Source-level review covered:
+- Authentication and session lifecycle
+- Google/email authentication paths
 - Appointment creation/edit/delete
-- Calendar month/week/day/list/kanban workflows and drag/drop status movement
-- Bulk status/closer/reschedule/delete actions
-- Smart Import and duplicate-aware appointment creation
-- Script selection, editing, favorites, reset, creation, deletion, and keyboard shortcuts
-- Callback/task workflows
-- Closer/team management and default closer routing
-- Analytics calculations/report sync path
-- Discord analytics preview/sync path
-- CSV and ICS exports
-- Global search/history/notification flows
-- Transcript-to-appointment workflow
-- Responsive modal/action error handling
+- Calendar views and appointment drag/drop
+- Status movement
+- Bulk status/closer/reschedule/delete operations
+- Smart import
+- Calling scripts
+- Script favorites
+- Script creation/deletion
+- Follow-up tasks
+- Closer management
+- Notifications/callbacks
+- Analytics
+- CSV/ICS export
+- Gmail/Google Calendar links
+- Global search
+- Transcript workflow
+- Objection handling
+- Responsive modal/sidebar behavior
+
+## Important audit finding
+The project contains a **No-Show tag** workflow and tag filtering, but there is no general-purpose tag-management UI in the supplied source. The existing implementation was preserved rather than inventing a new tagging system.
+
+## Validation performed
+- ZIP inventory and source inspection completed.
+- All local relative imports were checked and no missing local module targets were found.
+- `package.json` and the root `package-lock.json` were synchronized after dependency cleanup.
+- Duplicate Vite declaration was removed.
+- `render.yaml` was parsed successfully as YAML.
+- Render configuration was checked against the current Render Blueprint specification.
+- The current source could not be given a final `npm ci`/Vite production-build execution inside this execution environment because npm registry package retrieval timed out. An offline install also failed because the required package tarballs were not cached. Therefore, a claim of a completed production build would be inaccurate.
+
+## Deployment state
+The source and deployment configuration are prepared for:
+
+- Render Static Site
+- Node/npm dependency installation via `npm ci`
+- Vite production build via `npm run build`
+- `dist` publishing
+- Firebase Authentication/Firestore in the browser
+
+Firebase Authentication still requires the final deployed Render hostname to be present in Firebase Authentication's authorized domains, and the supplied `firestore.rules` must be deployed to the target Firebase project. Those are external Firebase project settings and cannot be verified from the ZIP alone.

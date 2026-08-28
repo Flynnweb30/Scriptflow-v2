@@ -7,6 +7,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  writeBatch,
   where,
 } from 'firebase/firestore';
 import { getAppAuth, getAppFirestore } from '../config/firebase-config';
@@ -328,7 +329,48 @@ export const FirestoreService = {
     try {
       await deleteDoc(doc(requireDb(), 'scripts', id));
     } catch (error) {
+      setCachedData('scripts', current);
+      notifyCollectionListeners('scripts', current);
       throw permissionMessage(error, 'delete this script');
+    }
+  },
+
+  async saveScriptOrder(orderedScripts: Array<{ id: string; order: number }>): Promise<void> {
+    const uid = await requireUser();
+    if (!orderedScripts.length) return;
+
+    const current = getCachedData<Script[]>('scripts', []);
+    const orderById = new Map(orderedScripts.map((item) => [item.id, item.order]));
+    const next = current.map((script) => (
+      orderById.has(script.id)
+        ? { ...script, order: orderById.get(script.id) }
+        : script
+    ));
+
+    // Keep locally cached scripts in the exact same order used by the UI.
+    next.sort((a, b) => {
+      const ao = typeof a.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
+      const bo = typeof b.order === 'number' ? b.order : Number.MAX_SAFE_INTEGER;
+      return ao - bo;
+    });
+    setCachedData('scripts', next);
+    notifyCollectionListeners('scripts', next);
+
+    const batch = writeBatch(requireDb());
+    orderedScripts.forEach(({ id, order }) => {
+      batch.set(
+        doc(requireDb(), 'scripts', id),
+        { userId: uid, order, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+    });
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      setCachedData('scripts', current);
+      notifyCollectionListeners('scripts', current);
+      throw permissionMessage(error, 'reorder your scripts');
     }
   },
 

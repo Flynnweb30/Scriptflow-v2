@@ -223,7 +223,12 @@ export const App: React.FC = () => {
             } else if (!isTyping && !isCtrlOrCmd && !e.altKey) {
                 const num = parseInt(e.key, 10);
                 if (!isNaN(num) && num >= 1 && num <= 9) {
-                    const scriptEntries = Object.entries(scripts) as [string, Script][];
+                    const scriptEntries = (Object.entries(scripts) as [string, Script][])
+                        .sort(([keyA, a], [keyB, b]) => {
+                            const orderA = typeof a.order === 'number' ? a.order : (a.keyNumber || Number.MAX_SAFE_INTEGER);
+                            const orderB = typeof b.order === 'number' ? b.order : (b.keyNumber || Number.MAX_SAFE_INTEGER);
+                            return orderA - orderB || a.name.localeCompare(b.name) || keyA.localeCompare(keyB);
+                        });
                     const matched = scriptEntries.find(([_, s], idx) => s.keyNumber === num || idx === num - 1);
                     if (matched) {
                         e.preventDefault();
@@ -294,6 +299,10 @@ export const App: React.FC = () => {
                             alert(error?.message || 'Unable to update the script favorite. Please sign in and try again.');
                         }
                     }
+                }}
+                onReorderScripts={async (orderedKeys) => {
+                    const orderedScripts = orderedKeys.map((id, index) => ({ id, order: index }));
+                    await FirestoreService.saveScriptOrder(orderedScripts);
                 }}
             />
 
