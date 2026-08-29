@@ -276,31 +276,36 @@ export const FirestoreService = {
   },
 
   subscribeScripts(onUpdate: (scripts: Record<string, Script>) => void, onError?: (error: any) => void): Unsubscribe {
+    const toRecord = (items: Script[]): Record<string, Script> => {
+      const result: Record<string, Script> = {
+        ...Object.fromEntries(Object.entries(DEFAULT_SCRIPTS).map(([id, script]) => [id, { ...script, id } as Script])),
+      };
+      items.forEach((item) => {
+        if (item?.id) result[item.id] = { ...item, id: item.id };
+      });
+      return Object.fromEntries(
+        Object.entries(result).sort(([keyA, a], [keyB, b]) => {
+          const orderA = Number.isFinite(Number(a.order)) ? Number(a.order) : Number(a.keyNumber ?? Number.MAX_SAFE_INTEGER);
+          const orderB = Number.isFinite(Number(b.order)) ? Number(b.order) : Number(b.keyNumber ?? Number.MAX_SAFE_INTEGER);
+          if (orderA !== orderB) return orderA - orderB;
+          return keyA.localeCompare(keyB);
+        }),
+      );
+    };
+
     if (!currentUserId()) {
-      onUpdate(DEFAULT_SCRIPTS);
+      onUpdate(toRecord([]));
       return () => {};
     }
 
+    // The generic collection cache stores arrays, while the UI exposes scripts
+    // as a keyed record. Always normalize both optimistic and remote snapshots
+    // through the same adapter so local writes cannot corrupt App state.
     return subscribeCollection<Script>(
       'scripts',
       'scripts',
       [],
-      (items) => {
-        const result: Record<string, Script> = { ...DEFAULT_SCRIPTS };
-        items.forEach((item: any) => { result[item.id] = item as Script; });
-
-        // Firestore does not guarantee document order. Keep one deterministic
-        // order for the sidebar, keyboard shortcuts, and script panel. Older
-        // scripts without `order` retain their legacy keyNumber/insertion order.
-        const ordered = Object.entries(result)
-          .sort(([keyA, a], [keyB, b]) => {
-            const orderA = Number.isFinite(Number((a as Script).order)) ? Number((a as Script).order) : Number((a as Script).keyNumber ?? Number.MAX_SAFE_INTEGER);
-            const orderB = Number.isFinite(Number((b as Script).order)) ? Number((b as Script).order) : Number((b as Script).keyNumber ?? Number.MAX_SAFE_INTEGER);
-            if (orderA !== orderB) return orderA - orderB;
-            return keyA.localeCompare(keyB);
-          });
-        onUpdate(Object.fromEntries(ordered));
-      },
+      (items) => onUpdate(toRecord(items)),
       (id, data) => ({ id, ...data }) as Script,
       undefined,
       onError,
@@ -311,9 +316,17 @@ export const FirestoreService = {
     const uid = await requireUser();
     const current = getCachedData<Script[]>('scripts', []);
     const currentArray = current;
+    const existing = currentArray.find((item) => item.id === id);
+    const maxOrder = currentArray.reduce((max, item) => Math.max(max, Number.isFinite(Number(item.order)) ? Number(item.order) : -1), -1);
+    const nextScript: Script = {
+      ...(existing || {}),
+      ...script,
+      id,
+      order: Number.isFinite(Number(script.order)) ? Number(script.order) : (existing?.order ?? maxOrder + 1),
+    };
     const nextArray = currentArray.some((item) => item.id === id)
-      ? currentArray.map((item) => item.id === id ? { ...item, ...script, id } : item)
-      : [...currentArray, { ...script, id }];
+      ? currentArray.map((item) => item.id === id ? nextScript : item)
+      : [...currentArray, nextScript];
     setCachedData('scripts', nextArray);
     notifyCollectionListeners('scripts', nextArray);
     try {
@@ -347,6 +360,7 @@ export const FirestoreService = {
       ...(currentMap.get(id) as Script),
       id,
       order: index,
+      keyNumber: index < 9 ? index + 1 : undefined,
     }));
 
     setCachedData('scripts', next);
@@ -374,6 +388,8 @@ export const FirestoreService = {
     try {
       await deleteDoc(doc(requireDb(), 'scripts', id));
     } catch (error) {
+      setCachedData('scripts', current);
+      notifyCollectionListeners('scripts', current);
       throw permissionMessage(error, 'delete this script');
     }
   },

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Appointment, Closer } from '../types';
 import { Utils } from '../utils/helpers';
 import { WorkspaceService } from '../services/WorkspaceService';
@@ -12,6 +12,7 @@ interface CalendarViewProps {
     onOpenQuickAdd: (defaultDate?: string, defaultStatus?: string) => void;
     onOpenSmartImport: () => void;
     onOpenBulkActions: () => void;
+    initialListPreset?: 'todo' | 'overdue' | null;
 }
 
 interface CalendarDay {
@@ -106,23 +107,78 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     onSelectAppointment,
     onOpenQuickAdd,
     onOpenSmartImport,
-    onOpenBulkActions
+    onOpenBulkActions,
+    initialListPreset = null
 }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [viewMode, setViewMode] = useState<'kanban' | 'month' | 'week' | 'day' | 'list'>('month');
     const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [activityFilter, setActivityFilter] = useState<'all' | 'meeting' | 'callback' | 'followup'>('all');
     const [assignedFilter, setAssignedFilter] = useState<string>('all');
+    const [timezoneFilter, setTimezoneFilter] = useState<string>('all');
     const [tagFilter, setTagFilter] = useState<string>('all');
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [draggedApptId, setDraggedApptId] = useState<string | null>(null);
     const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
     const [showMoreModal, setShowMoreModal] = useState<{ date: string; appointments: Appointment[] } | null>(null);
-    const [listPreset, setListPreset] = useState<'todo' | 'overdue' | 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'custom'>('todo');
+    const [activityPopover, setActivityPopover] = useState<Appointment | null>(null);
+    const [listPreset, setListPreset] = useState<'todo' | 'overdue' | 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'custom'>(initialListPreset);
+    const [includeCompleted, setIncludeCompleted] = useState(false);
+    const [listSort, setListSort] = useState<{ key: 'date' | 'business' | 'contact' | 'type' | 'status' | 'closer'; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'asc' });
+    const [callbackKindFilter, setCallbackKindFilter] = useState('all');
+    const [followUpTypeFilter, setFollowUpTypeFilter] = useState('all');
+    const [timelineZoom, setTimelineZoom] = useState(1);
+    const timelineRef = useRef<HTMLDivElement | null>(null);
     const [listCategory, setListCategory] = useState<'all' | 'meetings' | 'callbacks' | 'followups'>('all');
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
 
+    useEffect(() => {
+        if (initialListPreset) {
+            setListPreset(initialListPreset);
+            setViewMode('list');
+        }
+    }, [initialListPreset]);
+
     const dateOnly = (value?: string) => Utils.normalizeDateOnly(value || '') || '';
+
+    const activityType = useCallback((appt: Appointment): 'meeting' | 'callback' | 'followup' => {
+        const explicit = String(appt.activityType || appt.appointmentType || appt.eventType || '').toLowerCase();
+        if (explicit.includes('callback')) return 'callback';
+        if (explicit.includes('follow')) return 'followup';
+        if (Utils.isCallbackAppointment(appt) || Boolean(appt.callbackTime) || Boolean(appt.callbackSetting && appt.callbackSetting !== 'none')) return 'callback';
+        if (['attempted', 'rescheduled', 'overdue'].includes(String(appt.status || '').toLowerCase()) || Boolean(appt.followUpType)) return 'followup';
+        return 'meeting';
+    }, []);
+
+    const isCompletedStatus = (status?: string) => ['Completed', 'Held', 'Canceled', 'Cancelled', 'No Show', 'No-show'].includes(status || '');
+    const isOverdue = useCallback((appt: Appointment) => {
+        const d = dateOnly(appt.date);
+        return Boolean(d && d < todayStr && !isCompletedStatus(appt.status));
+    }, [todayStr]);
+
+    const getActivityStatusColor = useCallback((appt: Appointment) => {
+        if (isOverdue(appt)) return '#ef4444';
+        const status = String(appt.status || '').toLowerCase();
+        if (status.includes('completed') || status === 'held') return '#22c55e';
+        if (status.includes('no show') || status.includes('no-show')) return '#f59e0b';
+        if (status.includes('cancel')) return '#64748b';
+        return '#3b82f6';
+    }, [isOverdue]);
+
+    const parseMinutes = useCallback((time?: string) => {
+        if (!time) return null;
+        const match = time.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+        if (!match) return null;
+        let hour = Number(match[1]);
+        const minute = Number(match[2] || 0);
+        const period = match[3]?.toUpperCase();
+        if (period === 'PM' && hour < 12) hour += 12;
+        if (period === 'AM' && hour === 12) hour = 0;
+        return Math.max(0, Math.min(1439, hour * 60 + minute));
+    }, []);
+
+    const getDuration = useCallback((appt: Appointment) => Math.max(15, Number(appt.durationMinutes || 30) + Number(appt.gracePeriodMinutes ?? 15)), []);
     const todayStr = Utils.getTodayStr();
     const getWeekBounds = (offsetWeeks = 0) => {
         const base = new Date(`${todayStr}T12:00:00`);
@@ -139,17 +195,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const filteredAppointments = useMemo(() => {
         return appointments.filter(appt => {
             const matchesStatus = statusFilter === 'all' || appt.status === statusFilter;
+            const explicitActivity = String(appt.activityType || appt.appointmentType || appt.eventType || '').toLowerCase();
+            const matchesActivity = activityFilter === 'all' || (activityFilter === 'callback' && (explicitActivity.includes('callback') || Utils.isCallbackAppointment(appt) || Boolean(appt.callbackTime) || Boolean(appt.callbackSetting && appt.callbackSetting !== 'none'))) || (activityFilter === 'followup' && (explicitActivity.includes('follow') || Boolean(appt.followUpType) || ['attempted','rescheduled','overdue'].includes(String(appt.status || '').toLowerCase()))) || (activityFilter === 'meeting' && !explicitActivity.includes('callback') && !explicitActivity.includes('follow') && !Utils.isCallbackAppointment(appt) && !appt.callbackTime && !(appt.callbackSetting && appt.callbackSetting !== 'none') && !appt.followUpType && !['attempted','rescheduled','overdue'].includes(String(appt.status || '').toLowerCase()));
             const matchesAssigned = assignedFilter === 'all' || appt.assigned === assignedFilter || appt.closer === assignedFilter;
             const matchesTag = tagFilter === 'all' || (tagFilter === 'no_show' && Utils.hasTag(appt, 'no_show'));
+            const matchesTimezone = timezoneFilter === 'all' || (appt.timezone || 'Central (CDT)') === timezoneFilter;
             const matchesSearch = !searchTerm || 
                 (appt.business && appt.business.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (appt.contactName && appt.contactName.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (appt.phone && appt.phone.includes(searchTerm)) ||
                 (appt.notes && appt.notes.toLowerCase().includes(searchTerm.toLowerCase()));
-            return matchesStatus && matchesAssigned && matchesTag && matchesSearch;
+            return matchesStatus && matchesActivity && matchesAssigned && matchesTimezone && matchesTag && matchesSearch;
         });
 
-    }, [appointments, statusFilter, assignedFilter, tagFilter, searchTerm]);
+    }, [appointments, statusFilter, activityFilter, assignedFilter, timezoneFilter, tagFilter, searchTerm]);
 
     const listFilteredAppointments = useMemo(() => {
         if (viewMode !== 'list') return filteredAppointments;
@@ -166,17 +225,43 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
         return filteredAppointments.filter((appt) => {
             const apptDate = dateOnly(appt.date);
-            const completed = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '');
-            const overdue = Boolean(apptDate && apptDate < today && !completed);
+            const completed = isCompletedStatus(appt.status);
+            const overdue = isOverdue(appt);
+            if (!includeCompleted && completed) return false;
             const matchesPreset = listPreset === 'todo' ? !completed : listPreset === 'overdue' ? overdue : (!start || apptDate >= start) && (!end || apptDate <= end);
             if (!matchesPreset) return false;
 
-            const isCallback = Boolean(appt.callbackTime || (appt.callbackSetting && appt.callbackSetting !== 'none') || ['Warm Callback', 'Overdue'].includes(appt.status || ''));
-            const isFollowup = ['Attempted', 'Warm Callback', 'Rescheduled', 'Overdue'].includes(appt.status || '');
-            const isMeeting = !isCallback && !isFollowup;
-            return listCategory === 'all' || (listCategory === 'callbacks' && isCallback) || (listCategory === 'followups' && isFollowup) || (listCategory === 'meetings' && isMeeting);
+            const type = activityType(appt);
+            if (listCategory !== 'all' && type !== listCategory.slice(0, -1)) return false;
+            if (type === 'callback' && callbackKindFilter !== 'all') {
+                const kind = String(appt.callbackKind || appt.callbackSetting || 'scheduled').toLowerCase();
+                if (kind !== callbackKindFilter) return false;
+            }
+            if (type === 'followup' && followUpTypeFilter !== 'all' && String(appt.followUpType || '').toLowerCase() !== followUpTypeFilter) return false;
+            return true;
         });
-    }, [filteredAppointments, viewMode, listPreset, listCategory, customStart, customEnd, todayStr]);
+    }, [filteredAppointments, viewMode, listPreset, listCategory, customStart, customEnd, todayStr, includeCompleted, callbackKindFilter, followUpTypeFilter, activityType, isOverdue]);
+
+    const sortedListAppointments = useMemo(() => {
+        const direction = listSort.direction === 'asc' ? 1 : -1;
+        return [...listFilteredAppointments].sort((a, b) => {
+            const typeA = activityType(a); const typeB = activityType(b);
+            let av = ''; let bv = '';
+            switch (listSort.key) {
+                case 'business': av = a.business || ''; bv = b.business || ''; break;
+                case 'contact': av = a.contactName || ''; bv = b.contactName || ''; break;
+                case 'type': av = typeA; bv = typeB; break;
+                case 'status': av = a.status || ''; bv = b.status || ''; break;
+                case 'closer': av = a.closer || a.assigned || ''; bv = b.closer || b.assigned || ''; break;
+                default: av = `${Utils.normalizeStoredAppointmentDate(a) || ''} ${a.time || ''}`; bv = `${Utils.normalizeStoredAppointmentDate(b) || ''} ${b.time || ''}`;
+            }
+            return av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' }) * direction;
+        });
+    }, [listFilteredAppointments, listSort, activityType]);
+
+    const toggleListSort = (key: typeof listSort.key) => {
+        setListSort(current => current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' });
+    };
 
     // Navigation
     const handlePrev = useCallback(() => {
@@ -343,7 +428,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const weekDays = useMemo(() => {
         const d = new Date(currentDate);
         const day = d.getDay();
-        const diff = d.getDate() - day;
+        const diff = d.getDate() - (day === 0 ? 6 : day - 1);
         const startOfWeek = new Date(d.setDate(diff));
 
         const days: Array<{
@@ -378,7 +463,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         } else if (viewMode === 'week') {
             return `Week of ${currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
         } else if (viewMode === 'list') {
-            return 'Appointment List';
+            return 'Activities';
         } else {
             return currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
         }
@@ -397,7 +482,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
     // Render compact appointment card for month view
     const renderAppointmentCard = (appt: Appointment, index: number, maxDisplay: number = 3) => {
-        const statusColor = Utils.getStatusColor(appt.status);
+        const statusColor = getActivityStatusColor(appt);
         const timeDisplay = appt.time || '';
 
         if (index >= maxDisplay) return null;
@@ -545,7 +630,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     </div>
                     {viewMode !== 'list' && (
                         <div style={{ display: 'flex', gap: '2px', background: '#0d1527', border: '1px solid #1a2744', borderRadius: '8px', padding: '2px' }}>
-                            {(['month', 'week', 'kanban'] as const).map(mode => (
+                            {(['month', 'week', 'day', 'kanban'] as const).map(mode => (
                                 <button key={mode} onClick={() => setViewMode(mode)} style={{ padding: '4px 8px', borderRadius: '5px', border: 'none', background: viewMode === mode ? '#1e3a8a' : 'transparent', color: viewMode === mode ? '#dbeafe' : '#64748b', fontSize: '10px', fontWeight: 700, cursor: 'pointer' }}>
                                     {mode === 'kanban' ? 'Kanban' : mode[0].toUpperCase() + mode.slice(1)}
                                 </button>
@@ -615,7 +700,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     />
                 </div>
 
-                <select 
+                <select
+                    value={activityFilter}
+                    onChange={(e) => setActivityFilter(e.target.value as typeof activityFilter)}
+                    aria-label="Activity type filter"
+                    style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px', outline: 'none' }}
+                >
+                    <option value="all">All Activities</option>
+                    <option value="meeting">Meetings</option>
+                    <option value="callback">Callbacks</option>
+                    <option value="followup">Follow-ups</option>
+                </select>
+
+                <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
                     style={{ 
@@ -659,6 +756,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </select>
 
                 <select
+                    value={timezoneFilter}
+                    onChange={(e) => setTimezoneFilter(e.target.value)}
+                    style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px', outline: 'none' }}
+                    aria-label="Timezone filter"
+                >
+                    <option value="all">All Timezones</option>
+                    {[...new Set(appointments.map(a => a.timezone || 'Central (CDT)'))].sort().map(zone => <option key={zone} value={zone}>{zone}</option>)}
+                </select>
+
+                <select
                     value={tagFilter}
                     onChange={(e) => setTagFilter(e.target.value)}
                     style={{
@@ -682,7 +789,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     fontWeight: 600,
                     marginLeft: 'auto'
                 }}>
-                    {filteredAppointments.length} leads
+                    {filteredAppointments.length} activities
                 </span>
             </div>
 
@@ -899,14 +1006,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} aria-label="Custom end date" style={{ height: '32px', padding: '0 9px', borderRadius: '7px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px' }} />
                     </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                    {([['meetings', 'Meetings', '#8b9cff'], ['callbacks', 'Callbacks', '#fbbf24'], ['followups', 'Follow-ups', '#34d399']] as const).map(([value, label, dot]) => (
-                        <button key={value} onClick={() => setListCategory(listCategory === value ? 'all' : value)} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '7px 11px', borderRadius: '8px', border: `1px solid ${listCategory === value ? dot : '#2a3852'}`, background: listCategory === value ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }}></span>{label}<i className="fas fa-chevron-down" style={{ fontSize: '8px', opacity: .7 }}></i></button>
-                    ))}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>Timezone</div>
-                    <span style={{ padding: '7px 10px', border: '1px solid #2a3852', borderRadius: '7px', background: '#0d1527', color: '#cbd5e1', fontSize: '11px', fontWeight: 700 }}>Central (CDT)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    <select value={listCategory} onChange={(e) => setListCategory(e.target.value as typeof listCategory)} aria-label="Activity type" style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #2a3852', background: '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800 }}>
+                        <option value="all">All activities</option>
+                        <option value="meetings">Meetings</option>
+                        <option value="callbacks">Callbacks</option>
+                        <option value="followups">Follow-ups</option>
+                    </select>
+                    {listCategory === 'callbacks' && (
+                        <select value={callbackKindFilter} onChange={(e) => setCallbackKindFilter(e.target.value)} aria-label="Callback kind" style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #2a3852', background: '#0d1527', color: '#e2e8f0', fontSize: '11px' }}>
+                            <option value="all">All callback kinds</option>
+                            <option value="24h">24-hour</option><option value="4h">4-hour</option><option value="1h">1-hour</option><option value="custom">Custom</option><option value="scheduled">Scheduled</option>
+                        </select>
+                    )}
+                    {listCategory === 'followups' && (
+                        <select value={followUpTypeFilter} onChange={(e) => setFollowUpTypeFilter(e.target.value)} aria-label="Follow-up type" style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #2a3852', background: '#0d1527', color: '#e2e8f0', fontSize: '11px' }}>
+                            <option value="all">All follow-up types</option><option value="call">Call</option><option value="email">Email</option><option value="task">Task</option>
+                        </select>
+                    )}
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: '32px', padding: '0 10px', border: '1px solid #2a3852', borderRadius: '8px', background: '#0d1527', color: '#cbd5e1', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={includeCompleted} onChange={(e) => setIncludeCompleted(e.target.checked)} /> Include completed
+                    </label>
+                    <span style={{ marginLeft: 'auto', padding: '7px 10px', border: '1px solid #2a3852', borderRadius: '7px', background: '#0d1527', color: '#cbd5e1', fontSize: '11px', fontWeight: 700 }}>Central (CDT)</span>
                 </div>
                 <div style={{
                     background: '#0d1527',
@@ -954,55 +1075,110 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
                                 <thead>
                                     <tr style={{ background: '#090e1a' }}>
-                                        {['Date / Time', 'Business', 'Contact', 'Status', 'Tags', 'Closer'].map(label => (
-                                            <th key={label} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', borderBottom: '1px solid #1a2744', whiteSpace: 'nowrap' }}>{label}</th>
+                                        {([['date','Date / Time'],['business','Business'],['contact','Contact'],['type','Type'],['status','Status'],['closer','Owner / Closer']] as const).map(([key,label]) => (
+                                            <th key={key} onClick={() => toggleListSort(key)} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b', letterSpacing: '0.04em', borderBottom: '1px solid #1a2744', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                                                {label} <i className={`fas fa-sort${listSort.key === key ? (listSort.direction === 'asc' ? '-up' : '-down') : ''}`} style={{ marginLeft: '4px', opacity: listSort.key === key ? 1 : .35 }}></i>
+                                            </th>
                                         ))}
+                                        <th style={{ padding: '10px 14px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#64748b', borderBottom: '1px solid #1a2744', whiteSpace: 'nowrap' }}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {[...listFilteredAppointments]
-                                        .sort((a, b) => {
-                                            const dateCompare = (Utils.normalizeStoredAppointmentDate(a) || '').localeCompare(Utils.normalizeStoredAppointmentDate(b) || '');
-                                            if (dateCompare !== 0) return dateCompare;
-                                            return String(a.time || '').localeCompare(String(b.time || ''));
-                                        })
-                                        .map(appt => {
-                                            const statusColor = Utils.getStatusColor(appt.status || 'Pending');
-                                            const isNoShow = Utils.isNoShow(appt);
-                                            return (
-                                                <tr key={appt.id} onClick={() => onSelectAppointment(appt)} style={{ cursor: 'pointer', borderBottom: '1px solid rgba(26, 39, 68, 0.7)' }} className="hover:bg-slate-800/30">
-                                                    <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>{Utils.formatDate(appt.date)}</div>
-                                                        <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{appt.time || 'All day'}{appt.timezone ? ` • ${appt.timezone}` : ''}</div>
-                                                    </td>
-                                                    <td style={{ padding: '12px 14px', minWidth: '180px' }}>
-                                                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.business || 'Untitled'}</div>
-                                                        {appt.role && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{appt.role}</div>}
-                                                    </td>
-                                                    <td style={{ padding: '12px 14px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0' }}>{appt.contactName || 'No contact'}</div>
-                                                        {appt.phone && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{appt.phone}</div>}
-                                                    </td>
-                                                    <td style={{ padding: '12px 14px' }}>
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 9px', borderRadius: '999px', background: `${statusColor}1c`, color: statusColor, fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap' }}>{appt.status || 'Pending'}</span>
-                                                    </td>
-                                                    <td style={{ padding: '12px 14px' }}>
-                                                        {isNoShow ? (
-                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '999px', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap' }}>
-                                                                <i className="fas fa-circle-xmark" style={{ fontSize: '9px' }}></i>
-                                                                No-Show
-                                                            </span>
-                                                        ) : <span style={{ fontSize: '10px', color: '#475569' }}>—</span>}
-                                                    </td>
-                                                    <td style={{ padding: '12px 14px', fontSize: '11px', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap' }}>{appt.closer || appt.assigned || 'Unassigned'}</td>
-                                                </tr>
-                                            );
-                                        })}
+                                    {sortedListAppointments.map(appt => {
+                                        const color = getActivityStatusColor(appt);
+                                        const type = activityType(appt);
+                                        const typeLabel = type === 'meeting' ? 'Meeting' : type === 'callback' ? 'Callback' : 'Follow-up';
+                                        const icon = type === 'meeting' ? 'fa-calendar-check' : type === 'callback' ? 'fa-phone' : (String(appt.followUpType || '').toLowerCase() === 'email' ? 'fa-envelope' : String(appt.followUpType || '').toLowerCase() === 'task' ? 'fa-list-check' : 'fa-phone-volume');
+                                        return (
+                                            <tr key={appt.id} style={{ borderBottom: '1px solid rgba(26, 39, 68, 0.7)' }}>
+                                                <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', cursor: 'pointer' }} onClick={() => onSelectAppointment(appt)}>
+                                                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>{Utils.formatDate(appt.date)}</div>
+                                                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{appt.time || 'All day'}{appt.timezone ? ` • ${appt.timezone}` : ''}</div>
+                                                </td>
+                                                <td style={{ padding: '12px 14px', minWidth: '160px', cursor: 'pointer' }} onClick={() => onSelectAppointment(appt)}><div style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.business || 'Untitled'}</div>{appt.role && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{appt.role}</div>}</td>
+                                                <td style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => onSelectAppointment(appt)}><div style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0' }}>{appt.contactName || 'No contact'}</div>{appt.phone && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{appt.phone}</div>}</td>
+                                                <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '10px', fontWeight: 800, color: '#cbd5e1' }}><i className={`fas ${icon}`} style={{ color }}></i>{typeLabel}{type === 'followup' && appt.followUpType ? ` • ${appt.followUpType}` : ''}</span></td>
+                                                <td style={{ padding: '12px 14px' }}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 9px', borderRadius: '999px', background: `${color}1c`, color, fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap' }}>{isOverdue(appt) ? 'Overdue' : (appt.status || 'Pending')}</span></td>
+                                                <td style={{ padding: '12px 14px', fontSize: '11px', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap' }}>{appt.closer || appt.assigned || 'Unassigned'}</td>
+                                                <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                        {appt.phone && <a href={`tel:${appt.phone}`} onClick={(e) => e.stopPropagation()} title="Call" aria-label={`Call ${appt.contactName || appt.business}`} style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', borderRadius: '7px', border: '1px solid #24324b', background: '#101a2e', color: '#38bdf8', textDecoration: 'none' }}><i className="fas fa-phone"></i></a>}
+                                                        <button onClick={() => onSelectAppointment(appt)} title={type === 'meeting' ? 'Open meeting' : 'Open contact'} aria-label={type === 'meeting' ? 'Open meeting' : 'Open contact'} style={{ width: '28px', height: '28px', borderRadius: '7px', border: '1px solid #24324b', background: '#101a2e', color: '#cbd5e1', cursor: 'pointer' }}><i className={`fas ${type === 'meeting' ? 'fa-calendar' : 'fa-user'}`}></i></button>
+                                                        <button onClick={() => onSelectAppointment(appt)} title={type === 'callback' ? 'Reschedule / reassign callback' : 'Open record'} aria-label={type === 'callback' ? 'Reschedule or reassign callback' : 'Open record'} style={{ width: '28px', height: '28px', borderRadius: '7px', border: '1px solid #24324b', background: '#101a2e', color: '#a78bfa', cursor: 'pointer' }}><i className={`fas ${type === 'callback' ? 'fa-clock-rotate-left' : 'fa-arrow-up-right-from-square'}`}></i></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                     )}
                 </div>
+                </>
+            ) : viewMode === 'day' ? (
+                <>
+                <div
+                    ref={timelineRef}
+                    onWheel={(e) => {
+                        if (!(e.ctrlKey || e.metaKey)) return;
+                        e.preventDefault();
+                        setTimelineZoom(z => Math.max(0.7, Math.min(2, z + (e.deltaY < 0 ? 0.1 : -0.1))));
+                    }}
+                    style={{ background: '#0d1527', border: '1px solid #1a2744', borderRadius: '14px', overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}
+                >
+                    <div style={{ minWidth: '760px', minHeight: `${Math.round(1440 * timelineZoom)}px`, position: 'relative', paddingLeft: '64px' }}>
+                        {Array.from({ length: 25 }, (_, hour) => (
+                            <div key={hour} style={{ position: 'absolute', left: 0, right: 0, top: `${hour * 60 * timelineZoom}px`, borderTop: hour === 24 ? '1px solid #2a3852' : '1px solid rgba(42,56,82,.55)', height: 0 }}>
+                                <span style={{ position: 'absolute', left: '8px', top: '-8px', fontSize: '10px', color: '#64748b', width: '48px', textAlign: 'right' }}>{String(hour).padStart(2, '0')}:00</span>
+                            </div>
+                        ))}
+                        {(() => {
+                            const day = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+                            const items = filteredAppointments.filter(a => Utils.normalizeStoredAppointmentDate(a) === day);
+                            const timed = items.filter(a => parseMinutes(a.time) !== null && activityType(a) !== 'followup');
+                            const allDay = items.filter(a => parseMinutes(a.time) === null);
+                            const lanes: Appointment[][] = [];
+                            const positions = new Map<string, { lane: number; lanes: number; start: number; duration: number }>();
+                            timed.sort((a,b) => (parseMinutes(a.time) ?? 0) - (parseMinutes(b.time) ?? 0));
+                            timed.forEach(appt => {
+                                const start = parseMinutes(appt.time) ?? 0;
+                                const end = start + getDuration(appt);
+                                let lane = 0;
+                                while (lanes[lane]?.some(other => { const os = parseMinutes(other.time) ?? 0; return start < os + getDuration(other) && end > os; })) lane++;
+                                (lanes[lane] ||= []).push(appt);
+                                positions.set(appt.id, { lane, lanes: 1, start, duration: getDuration(appt) });
+                            });
+                            positions.forEach((pos, id) => {
+                                const overlapCount = timed.filter(other => { if (other.id === id) return false; const os = parseMinutes(other.time) ?? 0; return pos.start < os + getDuration(other) && pos.start + pos.duration > os; }).length + 1;
+                                pos.lanes = Math.max(1, overlapCount);
+                            });
+                            return (
+                                <>
+                                    {allDay.length > 0 && <div style={{ position: 'absolute', top: '8px', left: '74px', right: '14px', padding: '8px', borderRadius: '8px', background: '#101a2e', border: '1px solid #24324b', color: '#cbd5e1', fontSize: '11px' }}>All day: {allDay.map(a => a.business).join(' • ')}</div>}
+                                    {items.length >= 5 && (() => {
+                                        const byTime = new Map<string, Appointment[]>();
+                                        items.forEach(a => { const key = a.time || 'all-day'; byTime.set(key, [...(byTime.get(key) || []), a]); });
+                                        return Array.from(byTime.entries()).filter(([, group]) => group.length >= 5).map(([time, group]) => <div key={`group-${time}`} style={{ position: 'absolute', top: `${(parseMinutes(time) ?? 0) * timelineZoom}px`, left: '74px', right: '14px', minHeight: '34px', borderRadius: '8px', background: '#101a2e', border: '1px solid #2a3852', display: 'flex', alignItems: 'center', padding: '0 10px', color: '#cbd5e1', fontSize: '11px', fontWeight: 800 }}>+ {group.length} activities at {time}</div>);
+                                    })()}
+                                    {timed.map(appt => {
+                                        const pos = positions.get(appt.id)!;
+                                        const hiddenByGroup = items.filter(a => (a.time || 'all-day') === (appt.time || 'all-day')).length >= 5;
+                                        if (hiddenByGroup) return null;
+                                        const width = `calc((100% - 88px) / ${pos.lanes})`;
+                                        return <div key={appt.id} onClick={(e) => { e.stopPropagation(); setActivityPopover(appt); }} style={{ position: 'absolute', top: `${pos.start * timelineZoom + 2}px`, left: `calc(74px + ${pos.lane} * ((100% - 88px) / ${pos.lanes}))`, width, height: `${Math.max(28, pos.duration * timelineZoom - 4)}px`, minWidth: '150px', overflow: 'hidden', borderRadius: '8px', padding: '7px 9px', boxSizing: 'border-box', background: `${getActivityStatusColor(appt)}20`, borderLeft: `3px solid ${getActivityStatusColor(appt)}`, borderTop: '1px solid rgba(255,255,255,.06)', cursor: 'pointer', zIndex: 2 }}>
+                                            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>{appt.time} • {activityType(appt)}</div>
+                                            <div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.business || 'Untitled'}</div>
+                                            <div style={{ fontSize: '10px', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.contactName || 'No contact'}{activityType(appt) === 'meeting' && appt.closer ? ` • ${appt.closer}` : ''}</div>
+                                        </div>;
+                                    })}
+                                    {items.filter(a => activityType(a) === 'followup').map(appt => { const start = parseMinutes(appt.time) ?? 0; return <div key={`fu-${appt.id}`} onClick={() => onSelectAppointment(appt)} style={{ position: 'absolute', top: `${start * timelineZoom + 2}px`, left: '74px', right: '14px', height: '22px', display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: '5px', background: '#34d39918', borderLeft: '2px solid #34d399', color: '#a7f3d0', fontSize: '10px', cursor: 'pointer', zIndex: 3 }}>{appt.time ? `${appt.time} • ` : ''}{appt.business} • Follow-up{appt.followUpType ? ` (${appt.followUpType})` : ''}</div>; })}
+                                </>
+                            );
+                        })()}
+                    </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '8px', color: '#64748b', fontSize: '10px' }}>Ctrl/Cmd + wheel: zoom <button onClick={() => setTimelineZoom(z => Math.max(.7, z - .1))} style={{ marginLeft: '8px', border: '1px solid #2a3852', background: '#0d1527', color: '#cbd5e1', borderRadius: '6px', padding: '3px 7px', cursor: 'pointer' }}>−</button><button onClick={() => setTimelineZoom(z => Math.min(2, z + .1))} style={{ border: '1px solid #2a3852', background: '#0d1527', color: '#cbd5e1', borderRadius: '6px', padding: '3px 7px', cursor: 'pointer' }}>+</button></div>
                 </>
             ) : viewMode === 'month' ? (
                 // Month View - Fixed Layout
@@ -1203,7 +1379,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 className="hover:bg-slate-800/20"
                             >
                                 {d.items.slice(0, 4).map(appt => {
-                                    const statusColor = Utils.getStatusColor(appt.status);
+                                    const statusColor = getActivityStatusColor(appt);
                                     return (
                                         <div
                                             key={appt.id}
@@ -1248,6 +1424,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 )}
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {activityPopover && (
+                <div onClick={() => setActivityPopover(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.25)' }}>
+                    <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '18%', left: '50%', transform: 'translateX(-50%)', width: 'min(420px, calc(100vw - 32px))', background: '#0d1527', border: '1px solid #2a3852', borderRadius: '14px', padding: '16px', boxShadow: '0 20px 50px rgba(0,0,0,.45)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                            <div><div style={{ fontSize: '14px', fontWeight: 900, color: '#f8fafc' }}>{activityPopover.business || 'Untitled'}</div><div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>{activityPopover.contactName || 'No contact'} • {activityPopover.date} {activityPopover.time || 'All day'}</div></div>
+                            <button onClick={() => setActivityPopover(null)} aria-label="Close activity details" style={{ border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}><i className="fas fa-times"></i></button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '8px', marginTop: '14px' }}>
+                            <div style={{ padding: '9px', borderRadius: '8px', background: '#091020' }}><div style={{ fontSize: '9px', color: '#64748b' }}>TYPE</div><div style={{ fontSize: '11px', color: '#e2e8f0', fontWeight: 800 }}>{activityType(activityPopover)}</div></div>
+                            <div style={{ padding: '9px', borderRadius: '8px', background: '#091020' }}><div style={{ fontSize: '9px', color: '#64748b' }}>STATUS</div><div style={{ fontSize: '11px', color: getActivityStatusColor(activityPopover), fontWeight: 800 }}>{isOverdue(activityPopover) ? 'Overdue' : activityPopover.status}</div></div>
+                            {activityType(activityPopover) === 'meeting' && <><div style={{ padding: '9px', borderRadius: '8px', background: '#091020' }}><div style={{ fontSize: '9px', color: '#64748b' }}>CLOSER / BOOKER</div><div style={{ fontSize: '11px', color: '#e2e8f0', fontWeight: 800 }}>{activityPopover.closer || 'Unassigned'}{activityPopover.booker ? ` / ${activityPopover.booker}` : ''}</div></div><div style={{ padding: '9px', borderRadius: '8px', background: '#091020' }}><div style={{ fontSize: '9px', color: '#64748b' }}>QUALITY / CONFIRMATION</div><div style={{ fontSize: '11px', color: '#e2e8f0', fontWeight: 800 }}>{activityPopover.qualityScore ?? '—'}{activityPopover.confirmationStatus ? ` • ${activityPopover.confirmationStatus}` : ''}</div></div></>}
+                        </div>
+                        {activityPopover.websiteStatus && <div style={{ marginTop: '8px', fontSize: '10px', color: '#94a3b8' }}>Website status: <strong style={{ color: '#cbd5e1' }}>{activityPopover.websiteStatus}</strong></div>}
+                        <button onClick={() => { const appt = activityPopover; setActivityPopover(null); onSelectAppointment(appt); }} style={{ width: '100%', marginTop: '14px', height: '36px', borderRadius: '8px', border: '1px solid #2563eb', background: 'rgba(37,99,235,.14)', color: '#60a5fa', fontWeight: 800, cursor: 'pointer' }}>{activityType(activityPopover) === 'meeting' ? 'Open meeting' : 'Open contact'}</button>
                     </div>
                 </div>
             )}
@@ -1315,7 +1509,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             {showMoreModal.appointments.map(appt => {
-                                const statusColor = Utils.getStatusColor(appt.status);
+                                const statusColor = getActivityStatusColor(appt);
                                 return (
                                     <div
                                         key={appt.id}

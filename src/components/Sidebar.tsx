@@ -23,6 +23,9 @@ interface SidebarProps {
     onDeleteScript?: (key: string) => void;
     onToggleFavorite?: (key: string) => void;
     onReorderScripts?: (orderedKeys: string[]) => Promise<void>;
+    overdueActivityCount?: number;
+    onOpenOverdueActivities?: () => void;
+    onOpenActivities?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -44,7 +47,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onEditScript,
     onDeleteScript,
     onToggleFavorite,
-    onReorderScripts
+    onReorderScripts,
+    overdueActivityCount = 0,
+    onOpenOverdueActivities,
+    onOpenActivities
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -53,6 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [newScriptContent, setNewScriptContent] = useState('');
     const [draggedScriptKey, setDraggedScriptKey] = useState<string | null>(null);
     const [dragOverScriptKey, setDragOverScriptKey] = useState<string | null>(null);
+    const [reorderingKey, setReorderingKey] = useState<string | null>(null);
 
     const handleScriptSelect = (key: string) => {
         setCurrentScriptKey(key);
@@ -120,10 +127,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         const target = index + direction;
         if (index < 0 || target < 0 || target >= keys.length) return;
         [keys[index], keys[target]] = [keys[target], keys[index]];
+        if (reorderingKey) return;
+        setReorderingKey(key);
         try {
             await onReorderScripts(keys);
         } catch (error: any) {
             alert(error?.message || 'Unable to reorder the call scripts.');
+        } finally {
+            setReorderingKey(null);
         }
     };
 
@@ -321,7 +332,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <div
                                     key={key}
                                     onClick={() => handleScriptSelect(key)}
-                                    draggable={Boolean(onReorderScripts)}
+                                    draggable={Boolean(onReorderScripts) && !reorderingKey}
                                     onDragStart={(e) => {
                                         if (!onReorderScripts) return;
                                         e.dataTransfer.effectAllowed = 'move';
@@ -415,8 +426,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                                         {onReorderScripts && (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '1px' }} onClick={(e) => e.stopPropagation()}>
-                                                <button onClick={() => void moveScriptBy(key, -1)} aria-label={`Move ${script.name} up`} title="Move up" style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: '2px 3px', fontSize: '9px' }}><i className="fas fa-chevron-up"></i></button>
-                                                <button onClick={() => void moveScriptBy(key, 1)} aria-label={`Move ${script.name} down`} title="Move down" style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: '2px 3px', fontSize: '9px' }}><i className="fas fa-chevron-down"></i></button>
+                                                <button disabled={Boolean(reorderingKey)} onClick={() => void moveScriptBy(key, -1)} aria-label={`Move ${script.name} up`} title="Move up" style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: '2px 3px', fontSize: '9px' }}><i className="fas fa-chevron-up"></i></button>
+                                                <button disabled={Boolean(reorderingKey)} onClick={() => void moveScriptBy(key, 1)} aria-label={`Move ${script.name} down`} title="Move down" style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: '2px 3px', fontSize: '9px' }}><i className="fas fa-chevron-down"></i></button>
                                             </div>
                                         )}
 
@@ -490,7 +501,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {toolsExpanded && (
                         <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '6px' }}>
                             <button
-                                onClick={() => { setActiveTab('calendar'); if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                                onClick={() => { onOpenActivities?.(); if (!onOpenActivities) setActiveTab('calendar'); if (window.innerWidth < 1024) setSidebarOpen(false); }}
                                 style={{
                                     border: 'none',
                                     background: activeTab === 'calendar' ? '#1e293b' : 'transparent',
@@ -507,7 +518,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 }}
                             >
                                 <i className="fas fa-calendar-alt" style={{ width: '16px', color: '#38bdf8' }}></i>
-                                <span>Appointment Calendar</span>
+                                <span style={{ flex: 1 }}>Activities</span>
+                                {overdueActivityCount > 0 && (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => { e.stopPropagation(); onOpenOverdueActivities?.(); }}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onOpenOverdueActivities?.(); } }}
+                                        title="Open overdue activities"
+                                        style={{ display: 'inline-grid', placeItems: 'center', background: '#ef4444', color: '#fff', minWidth: '20px', height: '20px', padding: '0 6px', borderRadius: '999px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                                    >
+                                        {overdueActivityCount > 99 ? '99+' : overdueActivityCount}
+                                    </span>
+                                )}
                             </button>
 
                             <button

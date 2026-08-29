@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Script } from '../types';
+import { DEFAULT_SCRIPTS } from '../config/constants';
 import { FirestoreService } from '../services/FirestoreService';
 
 interface ScriptPanelProps {
@@ -62,10 +63,17 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
 
     const handleReset = async () => {
         if (confirm(`Reset "${currentScript.name}" to initial default template?`)) {
+            const defaultScript = DEFAULT_SCRIPTS[currentScriptKey];
+            if (!defaultScript) {
+                alert('This custom script has no default template to restore.');
+                return;
+            }
             const nextVersion = (currentScript.version || 1) + 1;
             const updated: Script = {
                 ...currentScript,
-                version: nextVersion
+                ...defaultScript,
+                version: nextVersion,
+                order: currentScript.order,
             };
             try {
                 await FirestoreService.saveScript(currentScriptKey, updated);
@@ -107,11 +115,27 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
         return text;
     };
 
-    const handleCopy = () => {
+    const handleCopy = async () => {
         const text = getProcessedContent(currentScript.content);
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (error) {
+            console.error('Copy script failed:', error);
+            alert('Unable to copy the script. Please select and copy the text manually.');
+        }
     };
 
     return (
