@@ -223,12 +223,7 @@ export const App: React.FC = () => {
             } else if (!isTyping && !isCtrlOrCmd && !e.altKey) {
                 const num = parseInt(e.key, 10);
                 if (!isNaN(num) && num >= 1 && num <= 9) {
-                    const scriptEntries = (Object.entries(scripts) as [string, Script][])
-                        .sort(([keyA, a], [keyB, b]) => {
-                            const orderA = typeof a.order === 'number' ? a.order : (a.keyNumber || Number.MAX_SAFE_INTEGER);
-                            const orderB = typeof b.order === 'number' ? b.order : (b.keyNumber || Number.MAX_SAFE_INTEGER);
-                            return orderA - orderB || a.name.localeCompare(b.name) || keyA.localeCompare(keyB);
-                        });
+                    const scriptEntries = Object.entries(scripts) as [string, Script][];
                     const matched = scriptEntries.find(([_, s], idx) => s.keyNumber === num || idx === num - 1);
                     if (matched) {
                         e.preventDefault();
@@ -301,8 +296,7 @@ export const App: React.FC = () => {
                     }
                 }}
                 onReorderScripts={async (orderedKeys) => {
-                    const orderedScripts = orderedKeys.map((id, index) => ({ id, order: index }));
-                    await FirestoreService.saveScriptOrder(orderedScripts);
+                    await FirestoreService.reorderScripts(orderedKeys);
                 }}
             />
 
@@ -367,6 +361,7 @@ export const App: React.FC = () => {
                     {activeTab === 'calendar' && (
                         <CalendarView
                             appointments={appointments}
+                            closers={closers}
                             onSelectAppointment={(appt) => setSelectedAppt(appt)}
                             onOpenQuickAdd={handleOpenQuickAdd}
                             onOpenSmartImport={() => setSmartImportOpen(true)}
@@ -375,7 +370,7 @@ export const App: React.FC = () => {
                     )}
 
                     {activeTab === 'analytics' && (
-                        <AnalyticsHub appointments={appointments} tasks={tasks} />
+                        <AnalyticsHub appointments={appointments} tasks={tasks} closers={closers} />
                     )}
 
                     {activeTab === 'tasks' && (

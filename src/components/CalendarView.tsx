@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Appointment } from '../types';
+import { Appointment, Closer } from '../types';
 import { Utils } from '../utils/helpers';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { FirestoreService } from '../services/FirestoreService';
@@ -7,6 +7,7 @@ import { CONFIG } from '../config/constants';
 
 interface CalendarViewProps {
     appointments: Appointment[];
+    closers?: Closer[];
     onSelectAppointment: (appt: Appointment) => void;
     onOpenQuickAdd: (defaultDate?: string, defaultStatus?: string) => void;
     onOpenSmartImport: () => void;
@@ -101,6 +102,7 @@ const PIPELINE_STAGES: PipelineStage[] = [
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
     appointments,
+    closers = CONFIG.DEFAULT_CLOSERS as Closer[],
     onSelectAppointment,
     onOpenQuickAdd,
     onOpenSmartImport,
@@ -115,8 +117,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const [draggedApptId, setDraggedApptId] = useState<string | null>(null);
     const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
     const [showMoreModal, setShowMoreModal] = useState<{ date: string; appointments: Appointment[] } | null>(null);
+    const [listPreset, setListPreset] = useState<'todo' | 'overdue' | 'today' | 'tomorrow' | 'this_week' | 'next_week' | 'custom'>('todo');
+    const [listCategory, setListCategory] = useState<'all' | 'meetings' | 'callbacks' | 'followups'>('all');
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
 
-    // Filters
+    const dateOnly = (value?: string) => Utils.normalizeDateOnly(value || '') || '';
+    const todayStr = Utils.getTodayStr();
+    const getWeekBounds = (offsetWeeks = 0) => {
+        const base = new Date(`${todayStr}T12:00:00`);
+        const day = base.getDay();
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        base.setDate(base.getDate() + diffToMonday + offsetWeeks * 7);
+        const start = new Date(base);
+        const end = new Date(base);
+        end.setDate(end.getDate() + 6);
+        return { start: Utils.normalizeDateOnly(start.toISOString()) || '', end: Utils.normalizeDateOnly(end.toISOString()) || '' };
+    };
+
+    // Shared appointment filter used by every calendar mode.
     const filteredAppointments = useMemo(() => {
         return appointments.filter(appt => {
             const matchesStatus = statusFilter === 'all' || appt.status === statusFilter;
@@ -129,7 +148,35 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 (appt.notes && appt.notes.toLowerCase().includes(searchTerm.toLowerCase()));
             return matchesStatus && matchesAssigned && matchesTag && matchesSearch;
         });
+
     }, [appointments, statusFilter, assignedFilter, tagFilter, searchTerm]);
+
+    const listFilteredAppointments = useMemo(() => {
+        if (viewMode !== 'list') return filteredAppointments;
+        const today = todayStr;
+        let start = '';
+        let end = '';
+        if (listPreset === 'today') start = end = today;
+        else if (listPreset === 'tomorrow') {
+            const d = new Date(`${today}T12:00:00`); d.setDate(d.getDate() + 1);
+            start = end = Utils.normalizeDateOnly(d.toISOString()) || '';
+        } else if (listPreset === 'this_week') ({ start, end } = getWeekBounds(0));
+        else if (listPreset === 'next_week') ({ start, end } = getWeekBounds(1));
+        else if (listPreset === 'custom') { start = customStart; end = customEnd || customStart; }
+
+        return filteredAppointments.filter((appt) => {
+            const apptDate = dateOnly(appt.date);
+            const completed = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '');
+            const overdue = Boolean(apptDate && apptDate < today && !completed);
+            const matchesPreset = listPreset === 'todo' ? !completed : listPreset === 'overdue' ? overdue : (!start || apptDate >= start) && (!end || apptDate <= end);
+            if (!matchesPreset) return false;
+
+            const isCallback = Boolean(appt.callbackTime || (appt.callbackSetting && appt.callbackSetting !== 'none') || ['Warm Callback', 'Overdue'].includes(appt.status || ''));
+            const isFollowup = ['Attempted', 'Warm Callback', 'Rescheduled', 'Overdue'].includes(appt.status || '');
+            const isMeeting = !isCallback && !isFollowup;
+            return listCategory === 'all' || (listCategory === 'callbacks' && isCallback) || (listCategory === 'followups' && isFollowup) || (listCategory === 'meetings' && isMeeting);
+        });
+    }, [filteredAppointments, viewMode, listPreset, listCategory, customStart, customEnd, todayStr]);
 
     // Navigation
     const handlePrev = useCallback(() => {
@@ -486,34 +533,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    <div style={{ 
-                        display: 'flex', 
-                        gap: '4px', 
-                        background: '#0d1527', 
-                        border: '1px solid #1a2744', 
-                        borderRadius: '10px', 
-                        padding: '3px' 
-                    }}>
-                        {['kanban', 'month', 'week', 'list'].map(mode => (
-                            <button
-                                key={mode}
-                                onClick={() => setViewMode(mode as any)}
-                                style={{
-                                    padding: '4px 12px',
-                                    borderRadius: '6px',
-                                    border: 'none',
-                                    background: viewMode === mode ? '#2563eb' : 'transparent',
-                                    color: viewMode === mode ? '#fff' : '#94a3b8',
-                                    fontSize: '11px',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease'
-                                }}
-                            >
-                                {mode === 'kanban' ? 'Kanban' : mode === 'month' ? 'Month' : mode === 'week' ? 'Week' : 'List'}
-                            </button>
-                        ))}
+                    <div style={{ display: 'flex', gap: '4px', background: '#0d1527', border: '1px solid #1a2744', borderRadius: '10px', padding: '3px' }}>
+                        {(['list', 'calendar'] as const).map(mode => {
+                            const active = mode === 'list' ? viewMode === 'list' : viewMode !== 'list';
+                            return (
+                                <button key={mode} onClick={() => setViewMode(mode === 'list' ? 'list' : (viewMode === 'kanban' ? 'kanban' : 'month'))} style={{ padding: '5px 13px', borderRadius: '6px', border: 'none', background: active ? '#2563eb' : 'transparent', color: active ? '#fff' : '#94a3b8', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>
+                                    {mode === 'list' ? 'List' : 'Calendar'}
+                                </button>
+                            );
+                        })}
                     </div>
+                    {viewMode !== 'list' && (
+                        <div style={{ display: 'flex', gap: '2px', background: '#0d1527', border: '1px solid #1a2744', borderRadius: '8px', padding: '2px' }}>
+                            {(['month', 'week', 'kanban'] as const).map(mode => (
+                                <button key={mode} onClick={() => setViewMode(mode)} style={{ padding: '4px 8px', borderRadius: '5px', border: 'none', background: viewMode === mode ? '#1e3a8a' : 'transparent', color: viewMode === mode ? '#dbeafe' : '#64748b', fontSize: '10px', fontWeight: 700, cursor: 'pointer' }}>
+                                    {mode === 'kanban' ? 'Kanban' : mode[0].toUpperCase() + mode.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     <button 
                         onClick={() => onOpenQuickAdd()}
@@ -615,8 +653,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {CONFIG.DEFAULT_TEAM_MEMBERS.map(m => (
                         <option key={m.id} value={m.name}>{m.name}</option>
                     ))}
-                    {CONFIG.DEFAULT_CLOSERS.map(c => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
+                    {closers.map(c => (
+                        <option key={c.id} value={c.name}>{c.name}{!c.active ? ' (Inactive)' : ''}</option>
                     ))}
                 </select>
 
@@ -848,7 +886,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     </div>
                 </div>
             ) : viewMode === 'list' ? (
-                // List View - Responsive appointment table
+                // List View - responsive task/appointment workspace aligned with the reference layout.
+                <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    {([['todo', 'To-do'], ['overdue', 'Overdue'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['this_week', 'This week'], ['next_week', 'Next week'], ['custom', 'Custom']] as const).map(([value, label]) => (
+                        <button key={value} onClick={() => setListPreset(value)} style={{ padding: '7px 12px', borderRadius: '7px', border: '1px solid #2a3852', background: listPreset === value ? '#18243b' : '#0d1527', color: listPreset === value ? '#f8fafc' : '#94a3b8', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>{label}</button>
+                    ))}
+                </div>
+                {listPreset === 'custom' && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                        <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} aria-label="Custom start date" style={{ height: '32px', padding: '0 9px', borderRadius: '7px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px' }} />
+                        <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} aria-label="Custom end date" style={{ height: '32px', padding: '0 9px', borderRadius: '7px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px' }} />
+                    </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                    {([['meetings', 'Meetings', '#8b9cff'], ['callbacks', 'Callbacks', '#fbbf24'], ['followups', 'Follow-ups', '#34d399']] as const).map(([value, label, dot]) => (
+                        <button key={value} onClick={() => setListCategory(listCategory === value ? 'all' : value)} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '7px 11px', borderRadius: '8px', border: `1px solid ${listCategory === value ? dot : '#2a3852'}`, background: listCategory === value ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }}></span>{label}<i className="fas fa-chevron-down" style={{ fontSize: '8px', opacity: .7 }}></i></button>
+                    ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Timezone</div>
+                    <span style={{ padding: '7px 10px', border: '1px solid #2a3852', borderRadius: '7px', background: '#0d1527', color: '#cbd5e1', fontSize: '11px', fontWeight: 700 }}>Central (CDT)</span>
+                </div>
                 <div style={{
                     background: '#0d1527',
                     border: '1px solid #1a2744',
@@ -865,7 +924,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         flexWrap: 'wrap'
                     }}>
                         <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                            Showing <strong style={{ color: '#f8fafc' }}>{filteredAppointments.length}</strong> appointments
+                            Showing <strong style={{ color: '#f8fafc' }}>{listFilteredAppointments.length}</strong> appointments
                         </div>
                         <button
                             onClick={() => onOpenQuickAdd()}
@@ -884,7 +943,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             Quick Add Appointment
                         </button>
                     </div>
-                    {filteredAppointments.length === 0 ? (
+                    {listFilteredAppointments.length === 0 ? (
                         <div style={{ padding: '48px 20px', textAlign: 'center', color: '#64748b' }}>
                             <i className="fas fa-calendar-xmark" style={{ fontSize: '26px', marginBottom: '10px' }}></i>
                             <div style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8' }}>No appointments found</div>
@@ -901,7 +960,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {[...filteredAppointments]
+                                    {[...listFilteredAppointments]
                                         .sort((a, b) => {
                                             const dateCompare = (Utils.normalizeStoredAppointmentDate(a) || '').localeCompare(Utils.normalizeStoredAppointmentDate(b) || '');
                                             if (dateCompare !== 0) return dateCompare;
@@ -944,6 +1003,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                     )}
                 </div>
+                </>
             ) : viewMode === 'month' ? (
                 // Month View - Fixed Layout
                 <div style={{ 

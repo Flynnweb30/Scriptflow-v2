@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { Script } from '../types';
 import { FirestoreService } from '../services/FirestoreService';
@@ -22,7 +22,7 @@ interface SidebarProps {
     onEditScript?: (key: string) => void;
     onDeleteScript?: (key: string) => void;
     onToggleFavorite?: (key: string) => void;
-    onReorderScripts?: (orderedKeys: string[]) => void | Promise<void>;
+    onReorderScripts?: (orderedKeys: string[]) => Promise<void>;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -69,8 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             content: newScriptContent.trim() || '“Hi [Company Name], this is Flynn...”',
             version: 1,
             keyNumber: scriptCount < 9 ? scriptCount + 1 : undefined,
-            favorite: false,
-            order: scriptCount
+            favorite: false
         };
         try {
             await FirestoreService.saveScript(key, newScript);
@@ -86,56 +85,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setNewScriptModalOpen(false);
     };
 
-    const scriptEntries = (Object.entries(scripts || {}) as [string, Script][])
-        .sort(([keyA, a], [keyB, b]) => {
-            const orderA = typeof a.order === 'number' ? a.order : (a.keyNumber || Number.MAX_SAFE_INTEGER);
-            const orderB = typeof b.order === 'number' ? b.order : (b.keyNumber || Number.MAX_SAFE_INTEGER);
-            if (orderA !== orderB) return orderA - orderB;
-            return a.name.localeCompare(b.name) || keyA.localeCompare(keyB);
-        });
+    const scriptEntries = useMemo(() => {
+        return (Object.entries(scripts || {}) as [string, Script][])
+            .sort(([keyA, a], [keyB, b]) => {
+                const orderA = Number.isFinite(Number(a.order)) ? Number(a.order) : Number(a.keyNumber ?? Number.MAX_SAFE_INTEGER);
+                const orderB = Number.isFinite(Number(b.order)) ? Number(b.order) : Number(b.keyNumber ?? Number.MAX_SAFE_INTEGER);
+                if (orderA !== orderB) return orderA - orderB;
+                return keyA.localeCompare(keyB);
+            });
+    }, [scripts]);
 
     const filteredScripts = scriptEntries.filter(([_, item]) => {
         if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return item.name.toLowerCase().includes(query) || item.content.toLowerCase().includes(query);
+        return item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+               item.content.toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    const handleScriptDragStart = (event: React.DragEvent<HTMLDivElement>, key: string) => {
-        if (searchQuery) {
-            event.preventDefault();
-            return;
-        }
-        setDraggedScriptKey(key);
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', key);
-    };
-
-    const handleScriptDragOver = (event: React.DragEvent<HTMLDivElement>, key: string) => {
-        if (!draggedScriptKey || draggedScriptKey === key || searchQuery) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        setDragOverScriptKey(key);
-    };
-
-    const handleScriptDrop = async (event: React.DragEvent<HTMLDivElement>, targetKey: string) => {
-        event.preventDefault();
-        const sourceKey = event.dataTransfer.getData('text/plain') || draggedScriptKey;
-        setDragOverScriptKey(null);
-        setDraggedScriptKey(null);
-        if (!sourceKey || sourceKey === targetKey || searchQuery) return;
-
-        const orderedKeys = scriptEntries.map(([key]) => key);
-        const sourceIndex = orderedKeys.indexOf(sourceKey);
-        const targetIndex = orderedKeys.indexOf(targetKey);
+    const commitScriptReorder = async (sourceKey: string, targetKey: string) => {
+        if (!onReorderScripts || sourceKey === targetKey) return;
+        const allKeys = scriptEntries.map(([key]) => key);
+        const sourceIndex = allKeys.indexOf(sourceKey);
+        const targetIndex = allKeys.indexOf(targetKey);
         if (sourceIndex < 0 || targetIndex < 0) return;
+        const next = [...allKeys];
+        const [moved] = next.splice(sourceIndex, 1);
+        next.splice(targetIndex, 0, moved);
+        await onReorderScripts(next);
+    };
 
-        orderedKeys.splice(sourceIndex, 1);
-        orderedKeys.splice(orderedKeys.indexOf(targetKey), 0, sourceKey);
-
+    const moveScriptBy = async (key: string, direction: -1 | 1) => {
+        if (!onReorderScripts) return;
+        const keys = scriptEntries.map(([entryKey]) => entryKey);
+        const index = keys.indexOf(key);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= keys.length) return;
+        [keys[index], keys[target]] = [keys[target], keys[index]];
         try {
-            await onReorderScripts?.(orderedKeys);
-        } catch (error) {
-            console.error('Script reorder failed:', error);
+            await onReorderScripts(keys);
+        } catch (error: any) {
+            alert(error?.message || 'Unable to reorder the call scripts.');
         }
     };
 
@@ -332,15 +320,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             return (
                                 <div
                                     key={key}
-                                    draggable={!searchQuery}
-                                    onDragStart={(event) => handleScriptDragStart(event, key)}
-                                    onDragOver={(event) => handleScriptDragOver(event, key)}
-                                    onDrop={(event) => void handleScriptDrop(event, key)}
-                                    onDragEnd={() => {
-                                        setDraggedScriptKey(null);
-                                        setDragOverScriptKey(null);
-                                    }}
                                     onClick={() => handleScriptSelect(key)}
+                                    draggable={Boolean(onReorderScripts)}
+                                    onDragStart={(e) => {
+                                        if (!onReorderScripts) return;
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('text/plain', key);
+                                        setDraggedScriptKey(key);
+                                    }}
+                                    onDragOver={(e) => {
+                                        if (!draggedScriptKey || draggedScriptKey === key) return;
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                        setDragOverScriptKey(key);
+                                    }}
+                                    onDragLeave={() => {
+                                        if (dragOverScriptKey === key) setDragOverScriptKey(null);
+                                    }}
+                                    onDrop={async (e) => {
+                                        e.preventDefault();
+                                        const sourceKey = e.dataTransfer.getData('text/plain') || draggedScriptKey;
+                                        setDragOverScriptKey(null);
+                                        setDraggedScriptKey(null);
+                                        if (sourceKey) {
+                                            try { await commitScriptReorder(sourceKey, key); }
+                                            catch (error: any) { alert(error?.message || 'Unable to reorder the call scripts.'); }
+                                        }
+                                    }}
+                                    onDragEnd={() => { setDraggedScriptKey(null); setDragOverScriptKey(null); }}
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
@@ -351,16 +358,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         color: isActive ? '#ffffff' : '#cbd5e1',
                                         cursor: 'pointer',
                                         transition: 'all 0.15s ease',
-                                        border: isActive ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent',
-                                        boxShadow: isActive ? '0 0 16px rgba(37, 99, 235, 0.45)' : 'none',
-                                        opacity: draggedScriptKey === key ? 0.55 : 1,
-                                        outline: dragOverScriptKey === key ? '2px solid #38bdf8' : 'none'
+                                        border: dragOverScriptKey === key ? '1px solid #38bdf8' : (isActive ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'),
+                                        boxShadow: isActive ? '0 0 16px rgba(37, 99, 235, 0.45)' : 'none'
                                     }}
                                     className={`script-item-row ${isActive ? 'active-script' : 'hover:bg-slate-800/40 hover:text-slate-200'}`}
                                 >
                                     {/* Left: Drag dots + Name */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
-                                        <i className="fas fa-grip-vertical" title={searchQuery ? 'Clear search to reorder scripts' : 'Drag to reorder'} style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#475569', fontSize: '11px', cursor: searchQuery ? 'not-allowed' : 'grab' }}></i>
+                                        <i className="fas fa-grip-vertical" style={{ color: isActive ? 'rgba(255,255,255,0.7)' : '#475569', fontSize: '11px', cursor: onReorderScripts ? 'grab' : 'default' }} title={onReorderScripts ? 'Drag to reorder' : undefined}></i>
                                         <span style={{
                                             fontSize: '12.5px',
                                             fontWeight: isActive ? 700 : 500,
@@ -406,6 +411,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             }}>
                                                 {keyNum}
                                             </span>
+                                        )}
+
+                                        {onReorderScripts && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1px' }} onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => void moveScriptBy(key, -1)} aria-label={`Move ${script.name} up`} title="Move up" style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: '2px 3px', fontSize: '9px' }}><i className="fas fa-chevron-up"></i></button>
+                                                <button onClick={() => void moveScriptBy(key, 1)} aria-label={`Move ${script.name} down`} title="Move down" style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: '2px 3px', fontSize: '9px' }}><i className="fas fa-chevron-down"></i></button>
+                                            </div>
                                         )}
 
                                         {/* Edit Icon */}

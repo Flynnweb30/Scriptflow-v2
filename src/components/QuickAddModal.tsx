@@ -217,7 +217,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                     onChange={(e) => setCloser(e.target.value)}
                                     style={{ width: '100%', height: '40px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '13px' }}
                                 >
-                                    {CONFIG.DEFAULT_CLOSERS.map(c => (
+                                    {closers.map(c => (
                                         <option key={c.id} value={c.name}>{c.name}</option>
                                     ))}
                                 </select>

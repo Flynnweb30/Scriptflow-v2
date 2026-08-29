@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Script } from '../types';
 import { FirestoreService } from '../services/FirestoreService';
-import { DEFAULT_SCRIPTS } from '../config/constants';
 
 interface ScriptPanelProps {
     scripts: Record<string, Script>;
@@ -63,17 +62,10 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
 
     const handleReset = async () => {
         if (confirm(`Reset "${currentScript.name}" to initial default template?`)) {
-            const defaultScript = DEFAULT_SCRIPTS[currentScriptKey];
-            if (!defaultScript) {
-                alert('This custom script does not have a default template to reset to.');
-                return;
-            }
             const nextVersion = (currentScript.version || 1) + 1;
             const updated: Script = {
                 ...currentScript,
-                ...defaultScript,
-                id: currentScriptKey,
-                version: nextVersion,
+                version: nextVersion
             };
             try {
                 await FirestoreService.saveScript(currentScriptKey, updated);
@@ -115,16 +107,11 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
         return text;
     };
 
-    const handleCopy = async () => {
+    const handleCopy = () => {
         const text = getProcessedContent(currentScript.content);
-        try {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-        } catch (error) {
-            console.error('Script copy failed:', error);
-            alert('Unable to copy the script. Please check browser clipboard permissions.');
-        }
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (

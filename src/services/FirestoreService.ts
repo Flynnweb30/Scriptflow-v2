@@ -7,8 +7,8 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  writeBatch,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { getAppAuth, getAppFirestore } from '../config/firebase-config';
 import { Appointment, Closer, Script, Task } from '../types';
@@ -288,7 +288,18 @@ export const FirestoreService = {
       (items) => {
         const result: Record<string, Script> = { ...DEFAULT_SCRIPTS };
         items.forEach((item: any) => { result[item.id] = item as Script; });
-        onUpdate(result);
+
+        // Firestore does not guarantee document order. Keep one deterministic
+        // order for the sidebar, keyboard shortcuts, and script panel. Older
+        // scripts without `order` retain their legacy keyNumber/insertion order.
+        const ordered = Object.entries(result)
+          .sort(([keyA, a], [keyB, b]) => {
+            const orderA = Number.isFinite(Number((a as Script).order)) ? Number((a as Script).order) : Number((a as Script).keyNumber ?? Number.MAX_SAFE_INTEGER);
+            const orderB = Number.isFinite(Number((b as Script).order)) ? Number((b as Script).order) : Number((b as Script).keyNumber ?? Number.MAX_SAFE_INTEGER);
+            if (orderA !== orderB) return orderA - orderB;
+            return keyA.localeCompare(keyB);
+          });
+        onUpdate(Object.fromEntries(ordered));
       },
       (id, data) => ({ id, ...data }) as Script,
       undefined,
@@ -320,6 +331,40 @@ export const FirestoreService = {
     }
   },
 
+  async reorderScripts(orderedIds: string[]): Promise<void> {
+    const uid = await requireUser();
+    const current = getCachedData<Script[]>('scripts', []);
+    const currentMap = new Map<string, Script>();
+    Object.entries(DEFAULT_SCRIPTS).forEach(([id, script]) => currentMap.set(id, { ...script, id } as Script));
+    current.forEach((script: any) => currentMap.set(script.id, script as Script));
+
+    const uniqueIds = [...new Set(orderedIds)].filter((id) => currentMap.has(id));
+    currentMap.forEach((_script, id) => {
+      if (!uniqueIds.includes(id)) uniqueIds.push(id);
+    });
+
+    const next = uniqueIds.map((id, index) => ({
+      ...(currentMap.get(id) as Script),
+      id,
+      order: index,
+    }));
+
+    setCachedData('scripts', next);
+    notifyCollectionListeners('scripts', next);
+
+    try {
+      const batch = writeBatch(requireDb());
+      next.forEach(({ id, ...script }) => {
+        batch.set(doc(requireDb(), 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      });
+      await batch.commit();
+    } catch (error) {
+      setCachedData('scripts', current);
+      notifyCollectionListeners('scripts', current);
+      throw permissionMessage(error, 'reorder the call scripts');
+    }
+  },
+
   async deleteScript(id: string): Promise<void> {
     await requireUser();
     const current = getCachedData<Script[]>('scripts', []);
@@ -329,48 +374,7 @@ export const FirestoreService = {
     try {
       await deleteDoc(doc(requireDb(), 'scripts', id));
     } catch (error) {
-      setCachedData('scripts', current);
-      notifyCollectionListeners('scripts', current);
       throw permissionMessage(error, 'delete this script');
-    }
-  },
-
-  async saveScriptOrder(orderedScripts: Array<{ id: string; order: number }>): Promise<void> {
-    const uid = await requireUser();
-    if (!orderedScripts.length) return;
-
-    const current = getCachedData<Script[]>('scripts', []);
-    const orderById = new Map(orderedScripts.map((item) => [item.id, item.order]));
-    const next = current.map((script) => (
-      orderById.has(script.id)
-        ? { ...script, order: orderById.get(script.id) }
-        : script
-    ));
-
-    // Keep locally cached scripts in the exact same order used by the UI.
-    next.sort((a, b) => {
-      const ao = typeof a.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
-      const bo = typeof b.order === 'number' ? b.order : Number.MAX_SAFE_INTEGER;
-      return ao - bo;
-    });
-    setCachedData('scripts', next);
-    notifyCollectionListeners('scripts', next);
-
-    const batch = writeBatch(requireDb());
-    orderedScripts.forEach(({ id, order }) => {
-      batch.set(
-        doc(requireDb(), 'scripts', id),
-        { userId: uid, order, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
-    });
-
-    try {
-      await batch.commit();
-    } catch (error) {
-      setCachedData('scripts', current);
-      notifyCollectionListeners('scripts', current);
-      throw permissionMessage(error, 'reorder your scripts');
     }
   },
 
@@ -386,25 +390,53 @@ export const FirestoreService = {
     );
   },
 
-  async saveCloser(closer: Closer): Promise<void> {
+  async saveCloser(closer: Closer, previousName?: string): Promise<void> {
     const uid = await requireUser();
-    const current = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
-    const next = current.some((c) => c.id === closer.id)
-      ? current.map((c) => c.id === closer.id ? closer : c)
-      : [...current, closer];
-    setCachedData('closers', next);
-    notifyCollectionListeners('closers', next);
+    const currentClosers = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
+    const currentAppointments = getCachedData<Appointment[]>('appointments', []);
+    const nextClosers = currentClosers.some((c) => c.id === closer.id)
+      ? currentClosers.map((c) => c.id === closer.id ? closer : c)
+      : [...currentClosers, closer];
+    const normalizedPrevious = previousName?.trim();
+    const normalizedNext = closer.name.trim();
+    const renamed = Boolean(normalizedPrevious && normalizedPrevious !== normalizedNext);
+    const now = new Date().toISOString();
+    const nextAppointments = renamed
+      ? currentAppointments.map((appointment) => appointment.closer === normalizedPrevious
+        ? { ...appointment, closer: normalizedNext, updatedAt: now }
+        : appointment)
+      : currentAppointments;
+
+    setCachedData('closers', nextClosers);
+    notifyCollectionListeners('closers', nextClosers);
+    if (renamed) {
+      setCachedData('appointments', nextAppointments);
+      notifyAppointmentListeners();
+    }
 
     try {
-      await setDoc(
-        doc(requireDb(), 'closers', closer.id),
-        { ...closer, userId: uid, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
+      const batch = writeBatch(requireDb());
+      batch.set(doc(requireDb(), 'closers', closer.id), { ...closer, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      if (renamed) {
+        nextAppointments.forEach((appointment) => {
+          if (appointment.closer === normalizedNext && currentAppointments.some((existing) => existing.id === appointment.id && existing.closer === normalizedPrevious)) {
+            batch.set(doc(requireDb(), 'appointments', appointment.id), {
+              closer: normalizedNext,
+              userId: uid,
+              updatedAt: serverTimestamp(),
+            }, { merge: true });
+          }
+        });
+      }
+      await batch.commit();
     } catch (error) {
-      setCachedData('closers', current);
-      notifyCollectionListeners('closers', current);
-      throw permissionMessage(error, 'save this closer');
+      setCachedData('closers', currentClosers);
+      notifyCollectionListeners('closers', currentClosers);
+      if (renamed) {
+        setCachedData('appointments', currentAppointments);
+        notifyAppointmentListeners();
+      }
+      throw permissionMessage(error, 'save the closer and synchronize its appointments');
     }
   },
 

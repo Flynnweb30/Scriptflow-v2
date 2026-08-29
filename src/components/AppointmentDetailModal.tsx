@@ -259,7 +259,7 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                         onChange={(e) => setFormData({ ...formData, closer: e.target.value })}
                                         style={{ width: '100%', height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '13px' }}
                                     >
-                                        {CONFIG.DEFAULT_CLOSERS.map(c => (
+                                        {closers.map(c => (
                                             <option key={c.id} value={c.name}>{c.name}</option>
                                         ))}
                                     </select>

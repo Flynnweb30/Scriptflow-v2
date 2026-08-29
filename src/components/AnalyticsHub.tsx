@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Appointment, Task } from '../types';
+import { Appointment, Closer, Task } from '../types';
 import { Utils } from '../utils/helpers';
 import { CONFIG } from '../config/constants';
 import DiscordService from '../services/DiscordService';
@@ -7,9 +7,10 @@ import DiscordService from '../services/DiscordService';
 interface AnalyticsHubProps {
     appointments: Appointment[];
     tasks?: Task[];
+    closers?: Closer[];
 }
 
-export const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ appointments, tasks = [] }) => {
+export const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ appointments, tasks = [], closers = CONFIG.DEFAULT_CLOSERS as Closer[] }) => {
     const [preset, setPreset] = useState<'today' | 'week' | 'month' | 'all'>('month');
     const [selectedAgent, setSelectedAgent] = useState<string>('all');
     const [isSyncing, setIsSyncing] = useState(false);
@@ -545,7 +546,7 @@ export const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ appointments, tasks 
                         {CONFIG.DEFAULT_TEAM_MEMBERS.map(m => (
                             <option key={m.id} value={m.name}>{m.name}</option>
                         ))}
-                        {CONFIG.DEFAULT_CLOSERS.map(c => (
+                        {closers.map(c => (
                             <option key={c.id} value={c.name}>{c.name} (Closer)</option>
                         ))}
                     </select>

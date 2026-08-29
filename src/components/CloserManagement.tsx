@@ -19,6 +19,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
         if (!name.trim()) return;
 
         const id = editingCloserId || 'closer_' + Utils.generateId();
+        const previousCloser = editingCloserId ? closers.find(c => c.id === editingCloserId) : undefined;
 
         try {
             // If marked as default, unset other defaults
@@ -35,11 +36,11 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
             name: name.trim(),
             email: email.trim(),
             phone: phone.trim(),
-            active: true,
+            active: previousCloser?.active ?? true,
             default: isDefault
         };
 
-            await FirestoreService.saveCloser(newCloser);
+            await FirestoreService.saveCloser(newCloser, previousCloser?.name);
         } catch (error: any) {
             alert(error?.message || 'Unable to save the closer. Please try again.');
             return;
