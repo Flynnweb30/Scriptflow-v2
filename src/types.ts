@@ -23,6 +23,14 @@ export interface Appointment {
     callbackCustomUnit?: string;
     callbackTriggered?: boolean;
     callbackTime?: string | null;
+    callbackPaused?: boolean;
+    callbackKind?: string;
+    followUpType?: string;
+    durationMinutes?: number;
+    gracePeriodMinutes?: number;
+    qualityScore?: number;
+    confirmationStatus?: string;
+    websiteStatus?: string;
     source?: string;
     icsUid?: string;
     allDay?: boolean;
@@ -30,16 +38,6 @@ export interface Appointment {
     eventType?: string;
     callCount?: number;
     dateKey?: string;
-    durationMinutes?: number;
-    gracePeriodMinutes?: number;
-    callbackKind?: string;
-    followUpType?: 'call' | 'email' | 'task' | string;
-    meetingStatus?: string;
-    qualityScore?: number;
-    confirmationStatus?: string;
-    websiteStatus?: string;
-    dealId?: string;
-    meetingUrl?: string;
 }
 
 export interface Script {
@@ -98,6 +96,14 @@ export interface AppNotification {
     time?: string;
     timezone?: string;
     callbackTime?: string | null;
+    callbackPaused?: boolean;
+    callbackKind?: string;
+    followUpType?: string;
+    durationMinutes?: number;
+    gracePeriodMinutes?: number;
+    qualityScore?: number;
+    confirmationStatus?: string;
+    websiteStatus?: string;
     formattedCallbackTime?: string;
     message: string;
     timestamp: string;

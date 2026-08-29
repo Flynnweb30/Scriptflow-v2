@@ -113,7 +113,7 @@ export const TimezoneUtils = {
         if (!appointment || !appointment.callbackSetting || appointment.callbackSetting === 'none') {
             return false;
         }
-        if (appointment.callbackTriggered) {
+        if (appointment.callbackTriggered || appointment.callbackPaused) {
             return false;
         }
         const callbackTime = this.calculateCallbackTime(appointment);

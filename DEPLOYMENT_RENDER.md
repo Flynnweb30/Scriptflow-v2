@@ -1,26 +1,20 @@
-# Render Deployment — ScriptFlow Pro v2.8
+# Render Deployment — ScriptFlow Pro
 
-## Recommended service type
+## Service type
+Use **Web Service / Node**, not Static Site. The project includes `server.js` and the existing `render.yaml` expects a Node service.
 
-Use **Web Service / Node**, not Static Site, because this project contains `server.js` and the Render configuration starts the Express server.
+## Settings
+- Name: `scriptflow-pro`
+- Branch: `main`
+- Root Directory: blank when `package.json` is at repository root
+- Runtime: Node
+- Build Command: `npm ci && npm run build`
+- Start Command: `npm start`
+- Node Version: `20.11.0`
+- Auto-Deploy: Yes
+- Pull Request Previews: Optional
 
-## Render settings
+Do not configure `dist` as a Static Site Publish Directory for this Node-service build.
 
-| Setting | Value |
-|---|---|
-| Name | `scriptflow-pro` |
-| Branch | `main` |
-| Root Directory | Blank when `package.json` is at repository root |
-| Runtime | Node |
-| Build Command | `npm ci && npm run build` |
-| Start Command | `npm start` |
-| Auto-Deploy | Yes |
-| Pull Request Previews | Optional |
-| Node Version | `20.11.0` |
-
-Do not configure a Static Site Publish Directory when using the Node Web Service configuration.
-
-## Repository layout
-
-For a blank Root Directory, `package.json`, `render.yaml`, `server.js`, `src/`, and `vite.config.ts` should be directly inside the GitHub repository root.
-
+## Environment variables
+Set the required Firebase/Vite variables in Render Environment Variables. See `FIREBASE_SETUP.md` and `.env.example`.

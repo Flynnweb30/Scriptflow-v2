@@ -22,16 +22,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
         const previousCloser = editingCloserId ? closers.find(c => c.id === editingCloserId) : undefined;
 
         try {
-            // If marked as default, unset other defaults
-            if (isDefault) {
-                for (const c of closers) {
-                    if (c.id !== id && c.default) {
-                        await FirestoreService.saveCloser({ ...c, default: false });
-                    }
-                }
-            }
-
-        const newCloser: Closer = {
+            const newCloser: Closer = {
             id,
             name: name.trim(),
             email: email.trim(),
@@ -83,12 +74,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
 
     const handleSetDefault = async (closer: Closer) => {
         try {
-            for (const c of closers) {
-                await FirestoreService.saveCloser({
-                    ...c,
-                    default: c.id === closer.id
-                });
-            }
+            await FirestoreService.saveCloser({ ...closer, default: true });
         } catch (error: any) {
             alert(error?.message || 'Unable to set the default closer. Please try again.');
         }

@@ -353,14 +353,11 @@ export const FirestoreService = {
     notifyCollectionListeners('scripts', next);
 
     try {
-      const db = requireDb();
-      for (let i = 0; i < next.length; i += 450) {
-        const batch = writeBatch(db);
-        next.slice(i, i + 450).forEach(({ id, ...script }) => {
-          batch.set(doc(db, 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
-        });
-        await batch.commit();
-      }
+      const batch = writeBatch(requireDb());
+      next.forEach(({ id, ...script }) => {
+        batch.set(doc(requireDb(), 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      });
+      await batch.commit();
     } catch (error) {
       setCachedData('scripts', current);
       notifyCollectionListeners('scripts', current);
@@ -399,11 +396,15 @@ export const FirestoreService = {
     const uid = await requireUser();
     const currentClosers = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
     const currentAppointments = getCachedData<Appointment[]>('appointments', []);
-    const nextClosers = currentClosers.some((c) => c.id === closer.id)
-      ? currentClosers.map((c) => c.id === closer.id ? closer : c)
-      : [...currentClosers, closer];
-    const normalizedPrevious = previousName?.trim();
     const normalizedNext = closer.name.trim();
+    if (!normalizedNext) throw new Error('Closer name is required.');
+
+    // Keep the closer collection authoritative: only one active closer can be default.
+    const normalizedCloser = { ...closer, name: normalizedNext, default: Boolean(closer.default && closer.active) };
+    const nextClosers = currentClosers.some((c) => c.id === closer.id)
+      ? currentClosers.map((c) => c.id === closer.id ? normalizedCloser : (normalizedCloser.default ? { ...c, default: false } : c))
+      : [...currentClosers.map((c) => normalizedCloser.default ? { ...c, default: false } : c), normalizedCloser];
+    const normalizedPrevious = previousName?.trim();
     const renamed = Boolean(normalizedPrevious && normalizedPrevious !== normalizedNext);
     const now = new Date().toISOString();
     const nextAppointments = renamed
@@ -421,23 +422,27 @@ export const FirestoreService = {
 
     try {
       const db = requireDb();
-      const writes: Array<{ ref: ReturnType<typeof doc>; data: Record<string, any> }> = [
-        { ref: doc(db, 'closers', closer.id), data: { ...closer, userId: uid, updatedAt: serverTimestamp() } },
-      ];
-      if (renamed) {
-        nextAppointments.forEach((appointment) => {
-          if (appointment.closer === normalizedNext && currentAppointments.some((existing) => existing.id === appointment.id && existing.closer === normalizedPrevious)) {
-            writes.push({ ref: doc(db, 'appointments', appointment.id), data: { closer: normalizedNext, userId: uid, updatedAt: serverTimestamp() } });
+      const batch = writeBatch(db);
+      if (normalizedCloser.default) {
+        currentClosers.forEach((existing) => {
+          if (existing.id !== normalizedCloser.id && existing.default) {
+            batch.set(doc(db, 'closers', existing.id), { default: false, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
           }
         });
       }
-      // Firestore limits a batch to 500 writes. Keep a safety margin so a closer rename
-      // remains atomic per chunk even for large workspaces.
-      for (let i = 0; i < writes.length; i += 450) {
-        const batch = writeBatch(db);
-        writes.slice(i, i + 450).forEach(({ ref, data }) => batch.set(ref, data, { merge: true }));
-        await batch.commit();
+      batch.set(doc(db, 'closers', normalizedCloser.id), { ...normalizedCloser, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      if (renamed) {
+        currentAppointments.forEach((appointment) => {
+          if (appointment.closer === normalizedPrevious) {
+            batch.set(doc(db, 'appointments', appointment.id), {
+              closer: normalizedNext,
+              userId: uid,
+              updatedAt: serverTimestamp(),
+            }, { merge: true });
+          }
+        });
       }
+      await batch.commit();
     } catch (error) {
       setCachedData('closers', currentClosers);
       notifyCollectionListeners('closers', currentClosers);

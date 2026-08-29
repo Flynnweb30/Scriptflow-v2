@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { Script } from '../types';
-import { FirestoreService } from '../services/FirestoreService';
-import { Appointment } from '../types';
+import { Script, Appointment } from '../types';
 import { Utils } from '../utils/helpers';
+import { FirestoreService } from '../services/FirestoreService';
 
 interface SidebarProps {
     activeTab: string;
@@ -18,7 +17,6 @@ interface SidebarProps {
     currentUser: User | null;
     onLogout: () => void;
     scripts: Record<string, Script>;
-    appointments?: Appointment[];
     currentScriptKey: string;
     setCurrentScriptKey: (key: string) => void;
     onAddScript?: () => void;
@@ -26,6 +24,8 @@ interface SidebarProps {
     onDeleteScript?: (key: string) => void;
     onToggleFavorite?: (key: string) => void;
     onReorderScripts?: (orderedKeys: string[]) => Promise<void>;
+    appointments?: Appointment[];
+    onOpenActivities?: (preset?: 'overdue') => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,14 +41,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     currentUser,
     onLogout,
     scripts,
-    appointments = [],
     currentScriptKey,
     setCurrentScriptKey,
     onAddScript,
     onEditScript,
     onDeleteScript,
     onToggleFavorite,
-    onReorderScripts
+    onReorderScripts,
+    appointments = [],
+    onOpenActivities
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -57,8 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [newScriptContent, setNewScriptContent] = useState('');
     const [draggedScriptKey, setDraggedScriptKey] = useState<string | null>(null);
     const [dragOverScriptKey, setDragOverScriptKey] = useState<string | null>(null);
-
-    const overdueCount = useMemo(() => appointments.filter((appt) => Utils.isOverdueActivity(appt)).length, [appointments]);
+    const [reorderingScriptKey, setReorderingScriptKey] = useState<string | null>(null);
 
     const handleScriptSelect = (key: string) => {
         setCurrentScriptKey(key);
@@ -70,11 +70,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         if (!newScriptName.trim()) return;
         const key = newScriptName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString().slice(-4);
         const scriptCount = Object.keys(scripts).length;
+        const maxOrder = Math.max(-1, ...Object.values(scripts as Record<string, Script>).map(script => Number.isFinite(Number(script.order)) ? Number(script.order) : -1));
         const newScript: Script = {
             name: newScriptName.trim(),
             content: newScriptContent.trim() || '“Hi [Company Name], this is Flynn...”',
             version: 1,
             keyNumber: scriptCount < 9 ? scriptCount + 1 : undefined,
+            order: maxOrder + 1,
             favorite: false
         };
         try {
@@ -101,6 +103,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             });
     }, [scripts]);
 
+    const overdueCount = useMemo(() => {
+        const today = Utils.getTodayStr();
+        return appointments.filter((appt) => {
+            const date = Utils.normalizeStoredAppointmentDate(appt);
+            const done = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '') || Utils.isNoShow(appt);
+            return Boolean(date && date < today && !done);
+        }).length;
+    }, [appointments]);
+
     const filteredScripts = scriptEntries.filter(([_, item]) => {
         if (!searchQuery) return true;
         return item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -108,7 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
 
     const commitScriptReorder = async (sourceKey: string, targetKey: string) => {
-        if (!onReorderScripts || sourceKey === targetKey) return;
+        if (!onReorderScripts || sourceKey === targetKey || reorderingScriptKey) return;
         const allKeys = scriptEntries.map(([key]) => key);
         const sourceIndex = allKeys.indexOf(sourceKey);
         const targetIndex = allKeys.indexOf(targetKey);
@@ -116,20 +127,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         const next = [...allKeys];
         const [moved] = next.splice(sourceIndex, 1);
         next.splice(targetIndex, 0, moved);
-        await onReorderScripts(next);
+        setReorderingScriptKey(sourceKey);
+        try { await onReorderScripts(next); }
+        finally { setReorderingScriptKey(null); }
     };
 
     const moveScriptBy = async (key: string, direction: -1 | 1) => {
-        if (!onReorderScripts) return;
+        if (!onReorderScripts || reorderingScriptKey) return;
         const keys = scriptEntries.map(([entryKey]) => entryKey);
         const index = keys.indexOf(key);
         const target = index + direction;
         if (index < 0 || target < 0 || target >= keys.length) return;
         [keys[index], keys[target]] = [keys[target], keys[index]];
+        setReorderingScriptKey(key);
         try {
             await onReorderScripts(keys);
         } catch (error: any) {
             alert(error?.message || 'Unable to reorder the call scripts.');
+        } finally {
+            setReorderingScriptKey(null);
         }
     };
 
@@ -327,7 +343,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 <div
                                     key={key}
                                     onClick={() => handleScriptSelect(key)}
-                                    draggable={Boolean(onReorderScripts)}
+                                    draggable={Boolean(onReorderScripts) && !reorderingScriptKey}
                                     onDragStart={(e) => {
                                         if (!onReorderScripts) return;
                                         e.dataTransfer.effectAllowed = 'move';
@@ -362,7 +378,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         borderRadius: '10px',
                                         background: isActive ? '#2563eb' : 'transparent',
                                         color: isActive ? '#ffffff' : '#cbd5e1',
-                                        cursor: 'pointer',
+                                        cursor: reorderingScriptKey ? 'wait' : 'pointer',
+                                        opacity: reorderingScriptKey && reorderingScriptKey !== key ? 0.65 : 1,
                                         transition: 'all 0.15s ease',
                                         border: dragOverScriptKey === key ? '1px solid #38bdf8' : (isActive ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'),
                                         boxShadow: isActive ? '0 0 16px rgba(37, 99, 235, 0.45)' : 'none'
@@ -496,7 +513,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {toolsExpanded && (
                         <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '6px' }}>
                             <button
-                                onClick={() => { setActiveTab('calendar'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('scriptflow:open-activities', { detail: { preset: 'overdue' } })), 0); if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                                onClick={() => {
+                                    if (onOpenActivities) onOpenActivities();
+                                    else setActiveTab('calendar');
+                                    if (window.innerWidth < 1024) setSidebarOpen(false);
+                                }}
                                 style={{
                                     border: 'none',
                                     background: activeTab === 'calendar' ? '#1e293b' : 'transparent',
@@ -514,7 +535,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             >
                                 <i className="fas fa-calendar-alt" style={{ width: '16px', color: '#38bdf8' }}></i>
                                 <span style={{ flex: 1 }}>Activities</span>
-                                {overdueCount > 0 && <span style={{ minWidth: '20px', height: '20px', padding: '0 6px', borderRadius: '999px', background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{overdueCount}</span>}
+                                {overdueCount > 0 && (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => { e.stopPropagation(); onOpenActivities?.('overdue'); if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onOpenActivities?.('overdue'); } }}
+                                        title={`${overdueCount} overdue activities`}
+                                        aria-label={`Open ${overdueCount} overdue activities`}
+                                        style={{ background: '#3f1d1d', color: '#fca5a5', borderRadius: '999px', minWidth: '20px', height: '20px', padding: '0 6px', display: 'inline-grid', placeItems: 'center', fontSize: '10px', fontWeight: 900, cursor: 'pointer' }}
+                                    >{overdueCount}</span>
+                                )}
                             </button>
 
                             <button

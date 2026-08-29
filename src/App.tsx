@@ -64,6 +64,7 @@ export const App: React.FC = () => {
     const [callbackDueModalOpen, setCallbackDueModalOpen] = useState(false);
     const [callbackDueNotif, setCallbackDueNotif] = useState<AppNotification | null>(null);
     const [callbackDueAppt, setCallbackDueAppt] = useState<Appointment | null>(null);
+    const [activitiesInitialPreset, setActivitiesInitialPreset] = useState<'todo' | 'overdue'>('todo');
 
     // Initial app/auth lifecycle. Workspace listeners are created only after Firebase
     // restores the session, preventing unauthenticated permission-denied queries.
@@ -141,13 +142,6 @@ export const App: React.FC = () => {
             unsubscribeAuth();
         };
     }, []);
-
-    useEffect(() => {
-        if (!selectedAppt) return;
-        const live = appointments.find((appt) => appt.id === selectedAppt.id);
-        if (live) setSelectedAppt(live);
-        else setSelectedAppt(null);
-    }, [appointments]);
 
     useEffect(() => {
         setNotifications(NotificationManager.loadNotifications());
@@ -230,7 +224,12 @@ export const App: React.FC = () => {
             } else if (!isTyping && !isCtrlOrCmd && !e.altKey) {
                 const num = parseInt(e.key, 10);
                 if (!isNaN(num) && num >= 1 && num <= 9) {
-                    const scriptEntries = Object.entries(scripts) as [string, Script][];
+                    const scriptEntries = (Object.entries(scripts) as [string, Script][])
+                        .sort(([keyA, a], [keyB, b]) => {
+                            const orderA = Number.isFinite(Number(a.order)) ? Number(a.order) : Number(a.keyNumber ?? Number.MAX_SAFE_INTEGER);
+                            const orderB = Number.isFinite(Number(b.order)) ? Number(b.order) : Number(b.keyNumber ?? Number.MAX_SAFE_INTEGER);
+                            return orderA !== orderB ? orderA - orderB : keyA.localeCompare(keyB);
+                        });
                     const matched = scriptEntries.find(([_, s], idx) => s.keyNumber === num || idx === num - 1);
                     if (matched) {
                         e.preventDefault();
@@ -289,7 +288,6 @@ export const App: React.FC = () => {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 scripts={scripts}
-                appointments={appointments}
                 currentScriptKey={currentScriptKey}
                 setCurrentScriptKey={setCurrentScriptKey}
                 onToggleFavorite={async (key) => {
@@ -305,6 +303,11 @@ export const App: React.FC = () => {
                 }}
                 onReorderScripts={async (orderedKeys) => {
                     await FirestoreService.reorderScripts(orderedKeys);
+                }}
+                appointments={appointments}
+                onOpenActivities={(preset) => {
+                    setActivitiesInitialPreset(preset === 'overdue' ? 'overdue' : 'todo');
+                    setActiveTab('calendar');
                 }}
             />
 
@@ -374,6 +377,7 @@ export const App: React.FC = () => {
                             onOpenQuickAdd={handleOpenQuickAdd}
                             onOpenSmartImport={() => setSmartImportOpen(true)}
                             onOpenBulkActions={() => setBulkActionsOpen(true)}
+                            initialListPreset={activitiesInitialPreset}
                         />
                     )}
 

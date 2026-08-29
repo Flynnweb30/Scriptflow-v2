@@ -30,6 +30,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     const [time, setTime] = useState('10:00 AM');
     const [timezone, setTimezone] = useState('Central CDT');
     const [status, setStatus] = useState(defaultStatus || 'New Lead');
+    const [activityType, setActivityType] = useState<'meeting' | 'callback' | 'followup'>('meeting');
     const defaultCloser = closers.find(c => c.default && c.active) || closers.find(c => c.active) || CONFIG.DEFAULT_CLOSERS[0];
     const [closer, setCloser] = useState(defaultCloser?.name || '');
     const [callbackSetting, setCallbackSetting] = useState('none');
@@ -37,18 +38,23 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     const [noShow, setNoShow] = useState(false);
 
     useEffect(() => {
-        if (isOpen) {
-            setNoShow(false);
-            setDate(defaultDate || Utils.getTodayStr());
-            setStatus(defaultStatus || 'New Lead');
-            setCloser(defaultCloser?.name || '');
-        }
-        if (defaultDate) {
-            setDate(defaultDate);
-        }
-        if (defaultStatus) {
-            setStatus(defaultStatus);
-        }
+        if (!isOpen) return;
+        // Always start from a clean form so a cancelled/failed entry cannot leak
+        // into the next appointment or make the UI appear to save stale data.
+        setBusiness('');
+        setContactName('');
+        setRole('');
+        setPhone('');
+        setEmail('');
+        setDate(defaultDate || Utils.getTodayStr());
+        setTime('10:00 AM');
+        setTimezone('Central CDT');
+        setStatus(defaultStatus || 'New Lead');
+        setActivityType(defaultStatus === 'Warm Callback' ? 'callback' : 'meeting');
+        setCloser(defaultCloser?.name || '');
+        setCallbackSetting('none');
+        setNotes('');
+        setNoShow(false);
     }, [isOpen, defaultDate, defaultStatus, defaultCloser?.name]);
 
     if (!isOpen) return null;
@@ -73,6 +79,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             primaryStatus: Utils.getPrimaryStatus(status),
             assigned: CONFIG.DEFAULT_TEAM_MEMBERS.find(member => member.active)?.name || 'Daniel',
             closer,
+            appointmentType: activityType,
+            eventType: activityType,
+            followUpType: activityType === 'followup' ? 'Task' : undefined,
             callbackSetting,
             notes: notes.trim(),
             tags: noShow ? ['no_show'] : [],
@@ -197,6 +206,18 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                         <option value="Pacific PDT">PDT</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-secondary)' }}>Activity Type</label>
+                                <select
+                                    value={activityType}
+                                    onChange={(e) => setActivityType(e.target.value as 'meeting' | 'callback' | 'followup')}
+                                    style={{ width: '100%', height: '40px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '13px' }}
+                                >
+                                    <option value="meeting">Meeting</option>
+                                    <option value="callback">Callback</option>
+                                    <option value="followup">Follow-up</option>
+                                </select>
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-secondary)' }}>Status</label>

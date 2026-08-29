@@ -62,25 +62,23 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
     };
 
     const handleReset = async () => {
-        const template = (DEFAULT_SCRIPTS as Record<string, Script>)[currentScriptKey];
-        if (!template) {
-            alert('This custom script has no default template to restore. Edit it manually or delete it.');
-            return;
-        }
-        if (confirm(`Reset "${currentScript.name}" to its original template?`)) {
+        if (confirm(`Reset "${currentScript.name}" to initial default template?`)) {
+            const template = DEFAULT_SCRIPTS[currentScriptKey];
+            if (!template) {
+                alert('This script does not have a default template to reset.');
+                return;
+            }
             const nextVersion = (currentScript.version || 1) + 1;
             const updated: Script = {
                 ...currentScript,
-                ...template,
-                id: currentScriptKey,
-                version: nextVersion,
-                order: currentScript.order,
-                favorite: currentScript.favorite
+                name: template.name,
+                content: template.content,
+                favorite: template.favorite,
+                keyNumber: template.keyNumber,
+                version: nextVersion
             };
             try {
                 await FirestoreService.saveScript(currentScriptKey, updated);
-                setEditedName(updated.name);
-                setEditedContent(updated.content);
                 setIsEditing(false);
             } catch (error: any) {
                 console.error('Script reset failed:', error);
@@ -122,23 +120,12 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
     const handleCopy = async () => {
         const text = getProcessedContent(currentScript.content);
         try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(text);
-            } else {
-                const area = document.createElement('textarea');
-                area.value = text;
-                area.style.position = 'fixed';
-                area.style.opacity = '0';
-                document.body.appendChild(area);
-                area.select();
-                document.execCommand('copy');
-                area.remove();
-            }
+            await navigator.clipboard.writeText(text);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (error) {
-            console.error('Script copy failed:', error);
-            alert('Unable to copy the script. Please select the text and copy it manually.');
+            console.error('Clipboard copy failed:', error);
+            alert('Unable to copy the script. Please check browser clipboard permissions.');
         }
     };
 

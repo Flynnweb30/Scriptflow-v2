@@ -54,26 +54,16 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
             updatedAt: new Date().toISOString()
         } as Appointment;
 
-        try {
-            await FirestoreService.saveAppointment(updated);
-            onSave(updated);
-            setIsEditing(false);
-        } catch (error: any) {
-            console.error('Appointment save failed:', error);
-            alert(error?.message || 'Unable to save the appointment. Please try again.');
-        }
+        await FirestoreService.saveAppointment(updated);
+        onSave(updated);
+        setIsEditing(false);
     };
 
     const handleDelete = async () => {
         if (confirm(`Delete appointment for "${appointment.business}"?`)) {
-            try {
-                await FirestoreService.deleteAppointment(appointment.id);
-                onDelete(appointment.id);
-                onClose();
-            } catch (error: any) {
-                console.error('Appointment delete failed:', error);
-                alert(error?.message || 'Unable to delete the appointment. Please try again.');
-            }
+            await FirestoreService.deleteAppointment(appointment.id);
+            onDelete(appointment.id);
+            onClose();
         }
     };
 
@@ -379,14 +369,6 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Meeting / activity metadata */}
-                            <div style={{ background: '#090e1a', border: '1px solid #1e293b', borderRadius: '12px', padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>BOOKER / OWNER</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.assigned || 'Unassigned'}</div></div>
-                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>QUALITY SCORE</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.qualityScore ?? leadScore}/100</div></div>
-                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>CONFIRMATION</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.confirmationStatus || 'Not recorded'}</div></div>
-                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>WEBSITE</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.websiteStatus || 'Not recorded'}</div></div>
-                            </div>
-
                             {/* Callback Due Info */}
                             {formData.callbackSetting && formData.callbackSetting !== 'none' && (
                                 <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '12px', padding: '14px', fontSize: '13px', color: '#fcd34d', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -452,7 +434,17 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                         </button>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {!isEditing && (Utils.isNoShow(appointment) || ['Canceled', 'No Show'].includes(appointment.status || '')) && (
+                            <button
+                                className="btn-secondary"
+                                onClick={() => { setFormData(prev => ({ ...prev, status: 'Rescheduled', primaryStatus: Utils.getPrimaryStatus('Rescheduled') })); setIsEditing(true); }}
+                                style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 700, borderColor: '#f59e0b', color: '#fbbf24' }}
+                            >
+                                <i className="fas fa-calendar-days" style={{ marginRight: '6px' }}></i>
+                                Reschedule
+                            </button>
+                        )}
                         {!isEditing ? (
                             <button 
                                 className="btn-primary" 

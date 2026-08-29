@@ -168,17 +168,14 @@ export const Utils = {
     },
 
     getPrimaryStatus(status: string): string {
-        if (CONFIG.PRIMARY_STATUSES.includes(status)) return status;
-        // Secondary workflow states must retain their semantic lifecycle.
-        // Rescheduled/Overdue are still open work; Held is completed.
         if (status === 'Rescheduled' || status === 'Overdue') return 'Pending';
         if (status === 'Held') return 'Completed';
+        if (CONFIG.PRIMARY_STATUSES.includes(status)) return status;
         return 'Pending';
     },
 
     isCompletedStatus(status: string): boolean {
-        const normalized = String(status || '').toLowerCase();
-        return ['completed', 'held', 'canceled', 'cancelled', 'no show', 'no-show'].includes(normalized);
+        return ['Completed', 'Held', 'Canceled', 'No Show'].includes(status);
     },
 
     getStatusColor(status: string): string {
@@ -241,62 +238,7 @@ export const Utils = {
         if (!appt) return false;
         const status = String(this.getStatus(appt) || '').toLowerCase().replace(/[-_]/g, ' ').trim();
         const primary = String(appt.primaryStatus || '').toLowerCase().replace(/[-_]/g, ' ').trim();
-        return status === 'warm callback' || primary === 'warm callback' || appt.appointmentType === 'callback' || appt.eventType === 'callback' || !!appt.callbackTime || (!!appt.callbackSetting && appt.callbackSetting !== 'none');
-    },
-
-    isFollowUpAppointment(appt?: Partial<Appointment> | null): boolean {
-        if (!appt) return false;
-        const explicitType = String(appt.appointmentType || appt.eventType || '').toLowerCase();
-        if (explicitType === 'followup' || explicitType === 'follow-up') return true;
-        const status = String(appt.status || '').toLowerCase().replace(/[-_]/g, ' ').trim();
-        return ['attempted', 'rescheduled'].includes(status) && !this.isCallbackAppointment(appt);
-    },
-
-    getActivityType(appt?: Partial<Appointment> | null): 'meeting' | 'callback' | 'followup' {
-        if (this.isCallbackAppointment(appt)) return 'callback';
-        if (this.isFollowUpAppointment(appt)) return 'followup';
-        return 'meeting';
-    },
-
-    isCompletedActivity(appt?: Partial<Appointment> | null): boolean {
-        if (!appt) return false;
-        const status = String(appt.status || '').toLowerCase().trim();
-        return ['completed', 'held', 'canceled', 'cancelled', 'no show', 'no-show'].includes(status) || this.isCompletedStatus(appt.status || '');
-    },
-
-    isOverdueActivity(appt?: Partial<Appointment> | null): boolean {
-        if (!appt) return false;
-        const date = this.normalizeStoredAppointmentDate(appt);
-        return !!date && date < this.getTodayStr() && !this.isCompletedActivity(appt);
-    },
-
-    getActivityStatusColor(appt?: Partial<Appointment> | null): string {
-        if (!appt) return '#94a3b8';
-        if (this.isCompletedActivity(appt)) {
-            const status = String(appt.status || '').toLowerCase();
-            if (status.includes('cancel')) return '#64748b';
-            if (status.includes('no show') || status.includes('no-show')) return '#f59e0b';
-            return '#10b981';
-        }
-        if (this.isOverdueActivity(appt)) return '#ef4444';
-        return '#3b82f6';
-    },
-
-    parseTimeToMinutes(value?: string): number | null {
-        if (!value) return null;
-        const raw = String(value).trim().toUpperCase();
-        const m = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/);
-        if (!m) return null;
-        let hour = Number(m[1]);
-        const minute = Number(m[2] || 0);
-        const meridiem = m[3];
-        if (minute > 59) return null;
-        if (meridiem) {
-            if (hour < 1 || hour > 12) return null;
-            if (meridiem === 'AM' && hour === 12) hour = 0;
-            if (meridiem === 'PM' && hour !== 12) hour += 12;
-        } else if (hour > 23) return null;
-        return hour * 60 + minute;
+        return status === 'warm callback' || primary === 'warm callback' || appt.appointmentType === 'callback' || appt.eventType === 'callback';
     },
 
     isMeetingAppointment(appt?: Partial<Appointment> | null): boolean {
