@@ -276,36 +276,31 @@ export const FirestoreService = {
   },
 
   subscribeScripts(onUpdate: (scripts: Record<string, Script>) => void, onError?: (error: any) => void): Unsubscribe {
-    const toRecord = (items: Script[]): Record<string, Script> => {
-      const result: Record<string, Script> = {
-        ...Object.fromEntries(Object.entries(DEFAULT_SCRIPTS).map(([id, script]) => [id, { ...script, id } as Script])),
-      };
-      items.forEach((item) => {
-        if (item?.id) result[item.id] = { ...item, id: item.id };
-      });
-      return Object.fromEntries(
-        Object.entries(result).sort(([keyA, a], [keyB, b]) => {
-          const orderA = Number.isFinite(Number(a.order)) ? Number(a.order) : Number(a.keyNumber ?? Number.MAX_SAFE_INTEGER);
-          const orderB = Number.isFinite(Number(b.order)) ? Number(b.order) : Number(b.keyNumber ?? Number.MAX_SAFE_INTEGER);
-          if (orderA !== orderB) return orderA - orderB;
-          return keyA.localeCompare(keyB);
-        }),
-      );
-    };
-
     if (!currentUserId()) {
-      onUpdate(toRecord([]));
+      onUpdate(DEFAULT_SCRIPTS);
       return () => {};
     }
 
-    // The generic collection cache stores arrays, while the UI exposes scripts
-    // as a keyed record. Always normalize both optimistic and remote snapshots
-    // through the same adapter so local writes cannot corrupt App state.
     return subscribeCollection<Script>(
       'scripts',
       'scripts',
       [],
-      (items) => onUpdate(toRecord(items)),
+      (items) => {
+        const result: Record<string, Script> = { ...DEFAULT_SCRIPTS };
+        items.forEach((item: any) => { result[item.id] = item as Script; });
+
+        // Firestore does not guarantee document order. Keep one deterministic
+        // order for the sidebar, keyboard shortcuts, and script panel. Older
+        // scripts without `order` retain their legacy keyNumber/insertion order.
+        const ordered = Object.entries(result)
+          .sort(([keyA, a], [keyB, b]) => {
+            const orderA = Number.isFinite(Number((a as Script).order)) ? Number((a as Script).order) : Number((a as Script).keyNumber ?? Number.MAX_SAFE_INTEGER);
+            const orderB = Number.isFinite(Number((b as Script).order)) ? Number((b as Script).order) : Number((b as Script).keyNumber ?? Number.MAX_SAFE_INTEGER);
+            if (orderA !== orderB) return orderA - orderB;
+            return keyA.localeCompare(keyB);
+          });
+        onUpdate(Object.fromEntries(ordered));
+      },
       (id, data) => ({ id, ...data }) as Script,
       undefined,
       onError,
@@ -316,17 +311,9 @@ export const FirestoreService = {
     const uid = await requireUser();
     const current = getCachedData<Script[]>('scripts', []);
     const currentArray = current;
-    const existing = currentArray.find((item) => item.id === id);
-    const maxOrder = currentArray.reduce((max, item) => Math.max(max, Number.isFinite(Number(item.order)) ? Number(item.order) : -1), -1);
-    const nextScript: Script = {
-      ...(existing || {}),
-      ...script,
-      id,
-      order: Number.isFinite(Number(script.order)) ? Number(script.order) : (existing?.order ?? maxOrder + 1),
-    };
     const nextArray = currentArray.some((item) => item.id === id)
-      ? currentArray.map((item) => item.id === id ? nextScript : item)
-      : [...currentArray, nextScript];
+      ? currentArray.map((item) => item.id === id ? { ...item, ...script, id } : item)
+      : [...currentArray, { ...script, id }];
     setCachedData('scripts', nextArray);
     notifyCollectionListeners('scripts', nextArray);
     try {
@@ -360,18 +347,20 @@ export const FirestoreService = {
       ...(currentMap.get(id) as Script),
       id,
       order: index,
-      keyNumber: index < 9 ? index + 1 : undefined,
     }));
 
     setCachedData('scripts', next);
     notifyCollectionListeners('scripts', next);
 
     try {
-      const batch = writeBatch(requireDb());
-      next.forEach(({ id, ...script }) => {
-        batch.set(doc(requireDb(), 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
-      });
-      await batch.commit();
+      const db = requireDb();
+      for (let i = 0; i < next.length; i += 450) {
+        const batch = writeBatch(db);
+        next.slice(i, i + 450).forEach(({ id, ...script }) => {
+          batch.set(doc(db, 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+        });
+        await batch.commit();
+      }
     } catch (error) {
       setCachedData('scripts', current);
       notifyCollectionListeners('scripts', current);
@@ -431,20 +420,24 @@ export const FirestoreService = {
     }
 
     try {
-      const batch = writeBatch(requireDb());
-      batch.set(doc(requireDb(), 'closers', closer.id), { ...closer, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      const db = requireDb();
+      const writes: Array<{ ref: ReturnType<typeof doc>; data: Record<string, any> }> = [
+        { ref: doc(db, 'closers', closer.id), data: { ...closer, userId: uid, updatedAt: serverTimestamp() } },
+      ];
       if (renamed) {
         nextAppointments.forEach((appointment) => {
           if (appointment.closer === normalizedNext && currentAppointments.some((existing) => existing.id === appointment.id && existing.closer === normalizedPrevious)) {
-            batch.set(doc(requireDb(), 'appointments', appointment.id), {
-              closer: normalizedNext,
-              userId: uid,
-              updatedAt: serverTimestamp(),
-            }, { merge: true });
+            writes.push({ ref: doc(db, 'appointments', appointment.id), data: { closer: normalizedNext, userId: uid, updatedAt: serverTimestamp() } });
           }
         });
       }
-      await batch.commit();
+      // Firestore limits a batch to 500 writes. Keep a safety margin so a closer rename
+      // remains atomic per chunk even for large workspaces.
+      for (let i = 0; i < writes.length; i += 450) {
+        const batch = writeBatch(db);
+        writes.slice(i, i + 450).forEach(({ ref, data }) => batch.set(ref, data, { merge: true }));
+        await batch.commit();
+      }
     } catch (error) {
       setCachedData('closers', currentClosers);
       notifyCollectionListeners('closers', currentClosers);

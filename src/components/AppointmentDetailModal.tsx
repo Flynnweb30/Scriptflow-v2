@@ -54,16 +54,26 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
             updatedAt: new Date().toISOString()
         } as Appointment;
 
-        await FirestoreService.saveAppointment(updated);
-        onSave(updated);
-        setIsEditing(false);
+        try {
+            await FirestoreService.saveAppointment(updated);
+            onSave(updated);
+            setIsEditing(false);
+        } catch (error: any) {
+            console.error('Appointment save failed:', error);
+            alert(error?.message || 'Unable to save the appointment. Please try again.');
+        }
     };
 
     const handleDelete = async () => {
         if (confirm(`Delete appointment for "${appointment.business}"?`)) {
-            await FirestoreService.deleteAppointment(appointment.id);
-            onDelete(appointment.id);
-            onClose();
+            try {
+                await FirestoreService.deleteAppointment(appointment.id);
+                onDelete(appointment.id);
+                onClose();
+            } catch (error: any) {
+                console.error('Appointment delete failed:', error);
+                alert(error?.message || 'Unable to delete the appointment. Please try again.');
+            }
         }
     };
 
@@ -367,6 +377,14 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                         {Utils.formatDate(formData.date)} at {formData.time || 'TBD'} ({formData.timezone || 'Central'})
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Meeting / activity metadata */}
+                            <div style={{ background: '#090e1a', border: '1px solid #1e293b', borderRadius: '12px', padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>BOOKER / OWNER</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.assigned || 'Unassigned'}</div></div>
+                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>QUALITY SCORE</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.qualityScore ?? leadScore}/100</div></div>
+                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>CONFIRMATION</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.confirmationStatus || 'Not recorded'}</div></div>
+                                <div><div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>WEBSITE</div><div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 700 }}>{formData.websiteStatus || 'Not recorded'}</div></div>
                             </div>
 
                             {/* Callback Due Info */}

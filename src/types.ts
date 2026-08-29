@@ -28,17 +28,18 @@ export interface Appointment {
     allDay?: boolean;
     appointmentType?: string;
     eventType?: string;
-    activityType?: 'meeting' | 'callback' | 'followup' | string;
-    callbackKind?: string;
-    followUpType?: 'call' | 'email' | 'task' | string;
+    callCount?: number;
+    dateKey?: string;
     durationMinutes?: number;
     gracePeriodMinutes?: number;
+    callbackKind?: string;
+    followUpType?: 'call' | 'email' | 'task' | string;
+    meetingStatus?: string;
     qualityScore?: number;
     confirmationStatus?: string;
     websiteStatus?: string;
-    booker?: string;
-    callCount?: number;
-    dateKey?: string;
+    dealId?: string;
+    meetingUrl?: string;
 }
 
 export interface Script {

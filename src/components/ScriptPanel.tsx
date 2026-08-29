@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Script } from '../types';
-import { DEFAULT_SCRIPTS } from '../config/constants';
 import { FirestoreService } from '../services/FirestoreService';
+import { DEFAULT_SCRIPTS } from '../config/constants';
 
 interface ScriptPanelProps {
     scripts: Record<string, Script>;
@@ -62,21 +62,25 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
     };
 
     const handleReset = async () => {
-        if (confirm(`Reset "${currentScript.name}" to initial default template?`)) {
-            const defaultScript = DEFAULT_SCRIPTS[currentScriptKey];
-            if (!defaultScript) {
-                alert('This custom script has no default template to restore.');
-                return;
-            }
+        const template = (DEFAULT_SCRIPTS as Record<string, Script>)[currentScriptKey];
+        if (!template) {
+            alert('This custom script has no default template to restore. Edit it manually or delete it.');
+            return;
+        }
+        if (confirm(`Reset "${currentScript.name}" to its original template?`)) {
             const nextVersion = (currentScript.version || 1) + 1;
             const updated: Script = {
                 ...currentScript,
-                ...defaultScript,
+                ...template,
+                id: currentScriptKey,
                 version: nextVersion,
                 order: currentScript.order,
+                favorite: currentScript.favorite
             };
             try {
                 await FirestoreService.saveScript(currentScriptKey, updated);
+                setEditedName(updated.name);
+                setEditedContent(updated.content);
                 setIsEditing(false);
             } catch (error: any) {
                 console.error('Script reset failed:', error);
@@ -121,20 +125,20 @@ export const ScriptPanel: React.FC<ScriptPanelProps> = ({
             if (navigator.clipboard?.writeText) {
                 await navigator.clipboard.writeText(text);
             } else {
-                const textarea = document.createElement('textarea');
-                textarea.value = text;
-                textarea.style.position = 'fixed';
-                textarea.style.opacity = '0';
-                document.body.appendChild(textarea);
-                textarea.select();
+                const area = document.createElement('textarea');
+                area.value = text;
+                area.style.position = 'fixed';
+                area.style.opacity = '0';
+                document.body.appendChild(area);
+                area.select();
                 document.execCommand('copy');
-                textarea.remove();
+                area.remove();
             }
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (error) {
-            console.error('Copy script failed:', error);
-            alert('Unable to copy the script. Please select and copy the text manually.');
+            console.error('Script copy failed:', error);
+            alert('Unable to copy the script. Please select the text and copy it manually.');
         }
     };
 

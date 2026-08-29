@@ -8,7 +8,6 @@ import { NotificationManager } from './managers/NotificationManager';
 import { AuthService } from './services/AuthService';
 import { FirestoreService } from './services/FirestoreService';
 import { WorkspaceService } from './services/WorkspaceService';
-import { Utils } from './utils/helpers';
 
 // Components
 import { Sidebar } from './components/Sidebar';
@@ -40,7 +39,6 @@ export const App: React.FC = () => {
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [currentScriptKey, setCurrentScriptKey] = useState<string>('opening');
     const [objectionsOpen, setObjectionsOpen] = useState(false);
-    const [calendarListPreset, setCalendarListPreset] = useState<'todo' | 'overdue' | null>(null);
 
     // Data State
     const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -51,13 +49,6 @@ export const App: React.FC = () => {
     const [closers, setClosers] = useState<Closer[]>(CONFIG.DEFAULT_CLOSERS);
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-
-
-    const overdueActivityCount = appointments.filter((appt) => {
-        const date = Utils.normalizeDateOnly(appt.date || '') || '';
-        const completed = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '');
-        return Boolean(date && date < Utils.getTodayStr() && !completed);
-    }).length;
 
     // Modal Visibility State
     const [smartImportOpen, setSmartImportOpen] = useState(false);
@@ -150,6 +141,13 @@ export const App: React.FC = () => {
             unsubscribeAuth();
         };
     }, []);
+
+    useEffect(() => {
+        if (!selectedAppt) return;
+        const live = appointments.find((appt) => appt.id === selectedAppt.id);
+        if (live) setSelectedAppt(live);
+        else setSelectedAppt(null);
+    }, [appointments]);
 
     useEffect(() => {
         setNotifications(NotificationManager.loadNotifications());
@@ -291,6 +289,7 @@ export const App: React.FC = () => {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 scripts={scripts}
+                appointments={appointments}
                 currentScriptKey={currentScriptKey}
                 setCurrentScriptKey={setCurrentScriptKey}
                 onToggleFavorite={async (key) => {
@@ -307,9 +306,6 @@ export const App: React.FC = () => {
                 onReorderScripts={async (orderedKeys) => {
                     await FirestoreService.reorderScripts(orderedKeys);
                 }}
-                overdueActivityCount={overdueActivityCount}
-                onOpenActivities={() => { setCalendarListPreset(null); setActiveTab('calendar'); }}
-                onOpenOverdueActivities={() => { setCalendarListPreset('overdue'); setActiveTab('calendar'); }}
             />
 
             {/* Main Content Area */}
@@ -378,7 +374,6 @@ export const App: React.FC = () => {
                             onOpenQuickAdd={handleOpenQuickAdd}
                             onOpenSmartImport={() => setSmartImportOpen(true)}
                             onOpenBulkActions={() => setBulkActionsOpen(true)}
-                            initialListPreset={calendarListPreset}
                         />
                     )}
 

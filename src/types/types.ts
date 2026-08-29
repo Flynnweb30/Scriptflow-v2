@@ -27,15 +27,6 @@ export interface Appointment {
     allDay?: boolean;
     appointmentType?: string;
     eventType?: string;
-    activityType?: 'meeting' | 'callback' | 'followup' | string;
-    callbackKind?: string;
-    followUpType?: 'call' | 'email' | 'task' | string;
-    durationMinutes?: number;
-    gracePeriodMinutes?: number;
-    qualityScore?: number;
-    confirmationStatus?: string;
-    websiteStatus?: string;
-    booker?: string;
     callCount?: number;
     dateKey?: string;
 }
