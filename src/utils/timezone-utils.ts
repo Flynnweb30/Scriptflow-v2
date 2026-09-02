@@ -35,6 +35,23 @@ export const setWorkspaceTimezone = (timezone: string): void => {
     try { localStorage.setItem(preferenceKey(), valid); } catch { /* storage can be unavailable */ }
 };
 
+export const getTodayStrInTimezone = (timezoneStr: string = getWorkspaceTimezone()): string => {
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: getIanaTimezone(timezoneStr),
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(new Date());
+        const values: Record<string, string> = {};
+        parts.forEach(part => { if (part.type !== 'literal') values[part.type] = part.value; });
+        return `${values.year}-${values.month}-${values.day}`;
+    } catch {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+};
+
 const getIanaTimezone = (timezoneStr?: string): string => {
     const value = String(timezoneStr || DEFAULT_TIMEZONE).trim();
     const direct = US_TIMEZONE_OPTIONS.find(option => option.value === value || option.shortLabel === value.toUpperCase());

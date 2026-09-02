@@ -6,6 +6,7 @@ import { FirestoreService } from '../services/FirestoreService';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { CONFIG } from '../config/constants';
 import { US_TIMEZONE_OPTIONS, normalizeUSTimezone } from '../utils/timezone-utils';
+import { getDefaultCloser } from '../utils/closer-utils';
 
 interface AppointmentDetailModalProps {
     appointment: Appointment | null;
@@ -274,7 +275,7 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Assigned Closer</label>
                                     <select 
-                                        value={formData.closer || closers.find(c => c.default && c.active)?.name || closers.find(c => c.active)?.name || 'Kailan'}
+                                        value={formData.closer || getDefaultCloser(closers).name}
                                         onChange={(e) => setFormData({ ...formData, closer: e.target.value })}
                                         style={{ width: '100%', height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '13px' }}
                                     >

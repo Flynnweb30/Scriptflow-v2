@@ -1,78 +1,102 @@
-# ScriptFlow Pro — Calendar/List + Calling Scripts Audit
+# ScriptFlow Pro v2.8 — Final QA / Functional Audit
 
 ## Scope
-Audited the current `scriptflow-v2.8-fixed-list-calendar-deploy` source and made targeted changes only where the implementation did not meet the requested Activities and Calling Scripts behavior.
+Audited the full current source with emphasis on Activities, Calendar/List, Calling Scripts, Closer Management, per-user synchronization, and US timezone behavior. Changes were limited to necessary fixes and preserved the existing architecture.
 
-## Implemented fixes
+## Functional areas audited
+- Authentication/session lifecycle
+- User-scoped Firestore subscriptions and local cache
+- Activities hub
+- List / Calendar switching
+- Activity filters and presets
+- Calendar Month / Week / Day / Kanban modes
+- Calendar zoom and overlapping activities
+- Callback pause/resume/complete/reschedule
+- Follow-up activities
+- Appointment creation/edit/delete/reschedule
+- Closer add/edit/activate/deactivate/default/delete
+- Closer-to-appointment synchronization
+- Bulk Actions
+- Smart Import
+- Transcript Studio
+- Calling Script create/edit/copy/favorite/reset/delete
+- Calling Script drag/drop and Up/Down reorder
+- Script shortcut numbering and keyboard shortcuts
+- Analytics
+- Notifications
+- CSV / ICS workflows
+- Responsive layout
+- Global US timezone selection and propagation
 
-### Activities / List View
-- Activities is treated as the central appointments workspace for Meetings, Callbacks, and Follow-ups.
-- Shared filters now include search, owner, timezone, status/tag, and activity type.
-- List presets: To-do, Overdue, Today, Tomorrow, This week, Next week, Custom.
-- Optional Include completed toggle.
-- Activity type icons/labels are distinct.
-- Callback subtype and Follow-up type filters are available when those activity types are selected.
-- Full-width responsive table with sortable Date/Time, Type, Business, Owner, and Status columns.
-- Direct actions include call, open record/contact/meeting, owner reassignment, callback pause/resume, callback mark-done, and reschedule entry.
-
-### Calendar View
-- Month view retained.
-- Week view now uses a full 00:00–24:00 timeline.
-- Day view added as an explicit calendar mode.
-- Ctrl/Cmd + wheel zoom plus visible zoom controls.
-- Status-aware colors: upcoming blue, overdue red, completed green, no-show amber, cancelled grey.
-- Overlapping activities are assigned side-by-side columns.
-- Open/to-do activities are assigned before completed/no-show/cancelled activities so unfinished work stays toward the left when overlaps occur.
-- Five or more activities at the exact same time are collapsed into a grouped block.
-- Meeting block height includes duration plus grace-period data when present, with safe defaults for legacy records.
-- Follow-ups render as compact markers.
-- Calendar activity popover shows date/time, business/contact, status, timezone, and meeting closer/booker/quality/confirmation/website metadata when available.
-- Double-clicking a timeline day opens Quick Add for that date.
-
-### Callback workflow
-- Callback pause state is persisted as `callbackPaused`.
-- Paused callbacks are excluded from callback-due notification polling.
-- List view provides Pause/Resume and Mark Done actions.
+## Fixes in this pass
+### Closer reliability
+- Default selection now has a dedicated Firestore transaction.
+- Only active closers may become default.
+- Previous defaults are cleared atomically.
+- Default fallback is maintained when the current default is deactivated or deleted.
+- Normalized closer state is persisted to the per-user cache.
+- UI prevents concurrent closer mutations while an operation is pending.
+- All booking tools use the same default-closer helper.
 
 ### Calling Scripts
-- Drag/drop ordering remains persisted using the existing `order` field.
-- Up/Down controls provide a reliable mouse/touch-friendly fallback.
-- Reordering is serialized at the UI level to prevent rapid-click race conditions.
-- Script creation assigns an explicit order so new scripts remain at the end.
-- Keyboard 1–9 script selection uses the same deterministic ordering.
-- Script delete now rolls the local cache back when the Firestore delete fails.
-- Script Reset now actually restores the corresponding default template instead of only incrementing the version.
-- Clipboard failures are handled instead of silently failing.
+- Shortcut numbers now follow the complete persisted order.
+- Stale `keyNumber` values are removed when scripts move beyond position 9.
+- Drag/drop and Up/Down controls remain backed by the same Firestore reorder operation.
+- Failed reorder writes roll back local state.
 
-### Closer synchronization
-- Closer changes remain user-scoped through Firestore.
-- Closer rename updates matching appointment closer values in the same write batch.
-- Default closer selection is centralized in `FirestoreService` so only one active closer is default.
-- Removed redundant per-closer default update loops from `CloserManagement`.
-- Calendar and Quick Add continue consuming the live `closers` state from the shared App subscription.
+### Timezones
+- Added global fixed transparent bar with EDT/CDT/MDT/PDT.
+- Global timezone selection is synchronized to Calendar and Sidebar through an application event.
+- Quick Add uses the selected US timezone for its default date.
+- Calendar's Today/Overdue indicators use the selected workspace timezone.
+- Appointment conversion remains DST-aware through IANA timezone identifiers.
 
-### Status consistency
-- `Rescheduled` and `Overdue` no longer incorrectly resolve to `Completed` through `getPrimaryStatus`.
-- `isCompletedStatus` now only treats Completed/Held/Canceled/No Show as completed.
+### UI conflict prevention
+- Removed the duplicate Calendar-specific workspace timezone selector; the global bar is now the single workspace timezone control.
+- Added safe top spacing to the application content so the fixed bar does not overlap the main hero/top controls.
+- Bar z-index is below modal layers and above ordinary page content.
+- Mobile sizing keeps all four timezone chips accessible without horizontal page overflow.
 
-## Verification performed
+## Automated/static validation
+- TS/TSX syntax parse: **PASS — 60 files**
+- `server.js` syntax: **PASS**
+- Local relative imports: **PASS**
+- `package.json`: **PASS**
+- Duplicate Vite dependency: **PASS**
+- Global timezone bar mounted in loading + authenticated application shell: **PASS**
+- EDT/CDT/MDT/PDT labels: **PASS**
+- Default closer transaction implementation: **PASS**
+- Closer normalized-cache synchronization: **PASS**
+- Script shortcut cleanup: **PASS**
+- Workspace timezone date utility: **PASS**
 
-- TS/TSX parser validation: **58/58 files passed**.
-- `server.js` Node syntax check: **passed**.
-- `package.json` and `package-lock.json` JSON validation: **passed**.
-- Duplicate Vite dependency check: **passed**; Vite exists only in `devDependencies`.
-- `npm ci --dry-run --offline`: **passed dependency graph resolution**.
-- Required-feature static audit: **all requested implementation markers passed**.
-- Firestore queries remain user-scoped using `where('userId', '==', uid)`.
+## Timezone conversion tests
+Examples validated with the application's IANA conversion approach:
+
+| Local time | Region | UTC |
+|---|---|---|
+| 10:00 AM, Jul 10 2026 | Eastern | 14:00 |
+| 10:00 AM, Jan 10 2026 | Eastern | 15:00 |
+| 10:00 AM, Jul 10 2026 | Central | 15:00 |
+| 10:00 AM, Jul 10 2026 | Mountain | 16:00 |
+| 10:00 AM, Jul 10 2026 | Pacific | 17:00 |
+
+Spring/fall DST transition dates were also exercised with the same conversion algorithm.
 
 ## Environment limitation
-A full `npm ci` could not be completed because the execution environment timed out/ lacked one cached npm tarball (`yargs-parser-21.1.1.tgz`). Consequently, a real Vite production build and browser E2E run could not be executed here. The source parser, Node syntax, lockfile resolution, and implementation audits passed. Render should perform the final network-backed `npm ci && npm run build`.
+A complete network-backed `npm ci` timed out because npm registry access was unavailable from this sandbox. The local `node_modules` tree is incomplete, which prevents a genuine `vite build` from running here. Therefore this report does not falsely mark the production build as passed.
 
-## Deployment target
-The project remains configured as a Render **Node Web Service**, using:
+Render should run the final network-backed:
 
-- Build: `npm ci && npm run build`
-- Start: `npm start`
-- Node: `20.11.0`
+```text
+npm ci && npm run build
+```
 
-No broad architecture rewrite was performed.
+followed by:
+
+```text
+npm start
+```
+
+## Final assessment
+Source-level, structural, timezone, synchronization, and targeted interaction checks pass. The deployment package is prepared for Render, with the final production dependency install/build left to the network-enabled deployment environment.

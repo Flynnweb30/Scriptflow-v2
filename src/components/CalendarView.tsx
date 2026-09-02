@@ -4,7 +4,7 @@ import { Utils } from '../utils/helpers';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
-import { getWorkspaceTimezone, setWorkspaceTimezone, US_TIMEZONE_OPTIONS, normalizeUSTimezone } from '../utils/timezone-utils';
+import { getTodayStrInTimezone, getWorkspaceTimezone, US_TIMEZONE_OPTIONS, normalizeUSTimezone } from '../utils/timezone-utils';
 
 interface CalendarViewProps {
     appointments: Appointment[];
@@ -138,7 +138,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         setListPreset(initialListPreset);
     }, [initialListPreset]);
 
-    const todayStr = Utils.getTodayStr();
+    const todayStr = getTodayStrInTimezone(workspaceTimezone);
+
+    useEffect(() => {
+        const syncTimezone = () => setWorkspaceTimezoneState(getWorkspaceTimezone());
+        window.addEventListener('scriptflow:timezone-change', syncTimezone);
+        window.addEventListener('storage', syncTimezone);
+        return () => {
+            window.removeEventListener('scriptflow:timezone-change', syncTimezone);
+            window.removeEventListener('storage', syncTimezone);
+        };
+    }, []);
 
     const getActivityKind = useCallback((appt: Appointment): 'meeting' | 'callback' | 'followup' => {
         const explicit = `${appt.appointmentType || ''} ${appt.eventType || ''}`.toLowerCase();
@@ -341,7 +351,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 dateStr,
                 dayNumber: dayNum,
                 isCurrentMonth: false,
-                isToday: dateStr === Utils.getTodayStr(),
+                isToday: dateStr === getTodayStrInTimezone(workspaceTimezone),
                 items: filteredAppointments.filter(a => Utils.normalizeStoredAppointmentDate(a) === dateStr),
                 dayOfWeek: dayNames[i]
             });
@@ -355,7 +365,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 dateStr,
                 dayNumber: day,
                 isCurrentMonth: true,
-                isToday: dateStr === Utils.getTodayStr(),
+                isToday: dateStr === getTodayStrInTimezone(workspaceTimezone),
                 items: filteredAppointments.filter(a => Utils.normalizeStoredAppointmentDate(a) === dateStr),
                 dayOfWeek: dayNames[dayOfWeekIndex]
             });
@@ -372,14 +382,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 dateStr,
                 dayNumber: day,
                 isCurrentMonth: false,
-                isToday: dateStr === Utils.getTodayStr(),
+                isToday: dateStr === getTodayStrInTimezone(workspaceTimezone),
                 items: filteredAppointments.filter(a => Utils.normalizeStoredAppointmentDate(a) === dateStr),
                 dayOfWeek: dayNames[dayOfWeekIndex]
             });
         }
 
         return grid;
-    }, [currentDate, filteredAppointments]);
+    }, [currentDate, filteredAppointments, workspaceTimezone]);
 
     // Generate Week View Days
     const weekDays = useMemo(() => {
@@ -404,12 +414,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 dateStr,
                 dayName: current.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
                 dayNumber: current.getDate(),
-                isToday: dateStr === Utils.getTodayStr(),
+                isToday: dateStr === getTodayStrInTimezone(workspaceTimezone),
                 items: filteredAppointments.filter(a => Utils.normalizeStoredAppointmentDate(a) === dateStr)
             });
         }
         return days;
-    }, [currentDate, filteredAppointments]);
+    }, [currentDate, filteredAppointments, workspaceTimezone]);
 
     const parseTimeMinutes = (value?: string): number | null => {
         if (!value) return null;
@@ -684,17 +694,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                     )}
 
-                    <div className="activities-timezone-control" style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 8px 0 10px', borderRadius: '9px', border: '1px solid #1a2744', background: '#0d1527' }} title="Default timezone for new bookings">
-                        <i className="fas fa-globe-americas" style={{ fontSize: '11px', color: '#64748b' }}></i>
-                        <select
-                            value={workspaceTimezone}
-                            onChange={(e) => { setWorkspaceTimezoneState(e.target.value); setWorkspaceTimezone(e.target.value); }}
-                            aria-label="Default booking timezone"
-                            style={{ border: 'none', outline: 'none', background: 'transparent', color: '#dbeafe', fontSize: '11px', fontWeight: 800, cursor: 'pointer', maxWidth: '128px' }}
-                        >
-                            {US_TIMEZONE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
-                    </div>
                     <button 
                         onClick={() => onOpenQuickAdd()}
                         style={{

@@ -10,6 +10,7 @@ import {
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
 import { getWorkspaceTimezone } from '../utils/timezone-utils';
+import { getDefaultCloser } from '../utils/closer-utils';
 
 interface SmartImportModalProps {
     isOpen: boolean;
@@ -78,7 +79,7 @@ export const SmartImportModal: React.FC<SmartImportModalProps> = ({
                 status: rec.validated.status || 'Pending',
                 primaryStatus: Utils.getPrimaryStatus(rec.validated.status || 'Pending'),
                 assigned: rec.validated.assigned || CONFIG.DEFAULT_TEAM_MEMBERS.find(member => member.active)?.name || 'Daniel',
-                closer: rec.validated.closer || (closers.find(c => c.default && c.active)?.name || closers.find(c => c.active)?.name || 'Kailan'),
+                closer: rec.validated.closer || getDefaultCloser(closers).name,
                 notes: rec.validated.notes || rec.raw,
                 createdAt: new Date().toISOString()
             };

@@ -336,17 +336,99 @@ body {
     .sidebar { width: 280px; }
     .main-content { padding: 16px; }
 }
-/* Activities hero navigation: remains visible while the list/timeline scrolls. */
-.activities-hero-nav {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+
+/* ============================================================
+   GLOBAL US TIMEZONE BAR
+   Fixed, centered, transparent and intentionally independent of
+   the page hero so it remains visible across every workspace.
+   ============================================================ */
+.us-timezone-bar {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 80;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 34px;
+    padding: 3px 5px 3px 9px;
+    border: 1px solid rgba(71, 85, 105, 0.45);
+    border-radius: 999px;
+    background: rgba(3, 7, 18, 0.58);
+    backdrop-filter: blur(14px) saturate(130%);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
+    white-space: nowrap;
 }
-.activities-timezone-control select option {
-    background: #0d1527;
-    color: #f8fafc;
+
+.us-timezone-bar__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding-right: 3px;
+    color: #94a3b8;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
 }
+
+.us-timezone-bar__label i {
+    font-size: 10px;
+    color: #64748b !important;
+}
+
+.us-timezone-bar__zones {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.us-timezone-chip {
+    min-width: 43px;
+    height: 26px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: #94a3b8;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 850;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.us-timezone-chip:hover {
+    color: #e2e8f0;
+    background: rgba(30, 41, 59, 0.58);
+    border-color: rgba(71, 85, 105, 0.5);
+}
+
+.us-timezone-chip.is-active {
+    color: #dbeafe;
+    background: rgba(37, 99, 235, 0.28);
+    border-color: rgba(96, 165, 250, 0.55);
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
+}
+
+.us-timezone-chip:focus-visible {
+    outline: 2px solid rgba(96, 165, 250, 0.85);
+    outline-offset: 2px;
+}
+
 @media (max-width: 720px) {
-    .activities-hero-nav { align-items: stretch !important; }
-    .activities-timezone-control { flex: 1 1 150px; }
-    .activities-timezone-control select { max-width: none !important; width: 100%; }
+    .us-timezone-bar {
+        top: 6px;
+        max-width: calc(100vw - 16px);
+        padding-left: 6px;
+        gap: 3px;
+    }
+    .us-timezone-bar__label span { display: none; }
+    .us-timezone-chip { min-width: 39px; padding: 0 7px; }
+}
+
+@media (max-width: 430px) {
+    .us-timezone-bar { transform: translateX(-50%) scale(0.92); transform-origin: top center; }
 }

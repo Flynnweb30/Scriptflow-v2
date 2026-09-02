@@ -31,6 +31,7 @@ import { AuthModal } from './components/AuthModal';
 import { CallbackDueModal } from './components/CallbackDueModal';
 import { HistoryModal } from './components/HistoryModal';
 import { BrandMark } from './components/ui/BrandMark';
+import { USTimezoneBar } from './components/USTimezoneBar';
 
 export const App: React.FC = () => {
     // Navigation & UI State
@@ -264,6 +265,7 @@ export const App: React.FC = () => {
                 minHeight: '100vh',
                 background: '#030712'
             }}>
+                <USTimezoneBar />
                 <div style={{ textAlign: 'center' }}>
                     <BrandMark size="lg" className="mx-auto" />
                     <div style={{ color: '#f1f5f9', fontSize: '18px', fontWeight: 600 }}>Loading ScriptFlow Pro...</div>
@@ -274,6 +276,7 @@ export const App: React.FC = () => {
 
     return (
         <div className="app-container" style={{ minHeight: '100vh', background: '#090d16', display: 'flex' }}>
+            <USTimezoneBar />
             {/* Sidebar */}
             <Sidebar
                 activeTab={activeTab}
@@ -317,7 +320,7 @@ export const App: React.FC = () => {
                 style={{
                     flex: 1,
                     minWidth: 0,
-                    padding: '20px 24px',
+                    padding: '54px 24px 20px',
                     display: 'flex',
                     flexDirection: 'column',
                     overflowY: 'auto',

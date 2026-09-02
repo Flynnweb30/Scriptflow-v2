@@ -1,50 +1,61 @@
-# ScriptFlow Pro v2.8 — Timezone / Script / Closer Audit
+# ScriptFlow Pro v2.8 — Final Timezone / Calling Scripts / Closer Audit
 
 ## Scope
-Targeted audit of the latest audited deployment package. Existing architecture was preserved; only the necessary UI/service/utilities were changed.
+Final targeted audit of the latest ScriptFlow Pro deployment source. The original application structure was preserved; only the necessary components, service logic, and timezone utilities were changed.
 
-## Timezone verification
-- Four US workspace booking zones are available: Eastern (EDT), Central (CDT), Mountain (MDT), Pacific (PDT).
-- Appointment times are interpreted as wall-clock time in the selected US IANA zone, so daylight/standard transitions are date-aware.
-- Legacy EST/CST/MST/PST/ET/CT/MT/PT values are normalized to their corresponding US region for consistent UI behavior.
-- The selected workspace timezone is stored per authenticated user and is used as the default for Quick Add, Smart Import, Transcript Studio, and CSV imports when no timezone is supplied.
-- Appointment editing includes a timezone selector and persists the selected timezone.
-- Calendar timezone filtering normalizes legacy values so old records remain discoverable.
+## US timezone behavior
+- Added a fixed, centered, transparent global timezone bar showing **EDT, CDT, MDT, and PDT**.
+- The bar is available throughout the application, including the loading state, and is layered below modal dialogs so it does not obstruct dialogs/popovers.
+- The selected workspace timezone is stored per authenticated user and is propagated through a small application event so open views can refresh immediately.
+- Booking dates default to the selected US workspace date instead of the browser/Philippines date.
+- Appointment wall-clock times are converted using the corresponding IANA zones:
+  - EDT/EST -> America/New_York
+  - CDT/CST -> America/Chicago
+  - MDT/MST -> America/Denver
+  - PDT/PST -> America/Los_Angeles
+- DST is date-aware; the IANA zone determines whether the selected date is currently standard or daylight time.
+- Legacy ET/CT/MT/PT and EST/CST/MST/PST values are normalized to the correct US region.
+- Quick Add, Smart Import, Transcript Studio, CSV import, appointment editing, callbacks, and calendar filtering continue to use the shared timezone utilities.
 
-### Verified examples
-| Local appointment | Zone | UTC result |
-|---|---|---|
-| 2026-09-02 10:00 AM | Eastern (EDT) | 2026-09-02 14:00 UTC |
-| 2026-09-02 10:00 AM | Central (CDT) | 2026-09-02 15:00 UTC |
-| 2026-09-02 10:00 AM | Mountain (MDT) | 2026-09-02 16:00 UTC |
-| 2026-09-02 10:00 AM | Pacific (PDT) | 2026-09-02 17:00 UTC |
-| 2026-01-15 10:00 AM | Eastern region | 2026-01-15 15:00 UTC |
-| 2026-01-15 10:00 AM | Central region | 2026-01-15 16:00 UTC |
+## Calling Scripts
+- Drag/drop and Up/Down controls still use the existing persistent Firestore `order` field.
+- Visible shortcut numbers are derived from the complete persisted order, not the current search subset.
+- Reordering positions 1–9 rewrites `keyNumber`.
+- Moving a script beyond position 9 removes its old `keyNumber` field, preventing stale shortcut numbers from returning after refresh.
+- UI reorder operations are serialized to prevent rapid-click race conditions.
+- Failed writes restore the previous local cache.
+- Keyboard 1–9 follows the same deterministic order.
 
-## Calling Scripts verification
-- Script order remains persisted through Firestore `order`.
-- Reordering also rewrites `keyNumber` for positions 1–9, so the visible shortcut number follows the script's new position.
-- Sidebar numbering is derived from the persisted sorted position rather than stale script metadata.
-- Drag/drop and explicit up/down controls use the same reorder operation.
-- Reorder failure restores the previous local cache.
+## Closer management
+- Added a dedicated `setDefaultCloser` service operation using a Firestore transaction so changing the default is atomic across the user's closer records.
+- Only an active closer can become default.
+- The previous default is cleared when another closer is selected.
+- Deactivating or deleting the default promotes another active closer when one exists.
+- Closer subscription normalization is also written back into the per-user cache, preventing an old default from briefly reappearing after reload.
+- Closer rename synchronization continues updating appointments that reference the previous closer name.
+- Quick Add, Appointment Detail, Bulk Actions, Smart Import, Calendar, Analytics, and Transcript Studio consume the same live closer state/default-selection helper.
+- Closer action buttons are guarded against duplicate concurrent writes.
 
-## Closer verification
-- Closer defaults are centralized in Firestore.
-- Only one active closer can be the default in the local state produced by the subscription.
-- Setting a different closer as default clears the previous default in the same batch.
-- Deactivating the default closer promotes another active closer when available.
-- Deleting the default closer promotes another active closer when available.
-- Renaming a closer updates appointments referencing the old closer name in the same Firestore batch.
-- Quick Add derives its default closer from the live closer collection and refreshes when the default closer changes.
+## Application consistency
+- Activities remains the central Meetings / Callbacks / Follow-ups workspace.
+- List and Calendar continue sharing the same appointments, filters, owners, statuses, timezone normalization, and real-time Firestore subscription.
+- Firebase data remains user-scoped by authenticated UID.
+- Existing Render Node Web Service architecture remains unchanged.
 
-## Hero navigation
-- Activities hero navigation is sticky while the Activities content scrolls.
-- The workspace timezone selector is placed inside the hero navigation and uses the same shared timezone values.
-- Responsive rules prevent the selector from colliding with controls on narrow screens.
+## Validation
+- 60 TS/TSX files parsed successfully with the TypeScript parser.
+- `server.js` syntax check passed.
+- Local relative import resolution passed.
+- Duplicate Vite dependency check passed: Vite exists only in `devDependencies`.
+- Targeted feature assertions passed.
+- DST/timezone conversion tests passed for Eastern, Central, Mountain, and Pacific regions, including winter standard-time behavior and daylight-transition dates.
+- Full network-backed `npm ci` could not complete in this sandbox because registry access timed out. The existing local dependency tree is incomplete, so a production Vite build could not be honestly claimed here.
 
-## Verification status
-- TypeScript/TSX syntax parse: PASS.
-- Timezone conversion checks: PASS.
-- Targeted source assertions: PASS.
-- Full `npm ci`: BLOCKED in this sandbox because npm registry access is unavailable; an offline install reported a missing cached tarball (`yargs-parser`).
-- Production `vite build`: therefore not executable in this sandbox. Render should perform the final network-backed `npm ci && npm run build`.
+## Deployment
+Render should use the existing Node Web Service configuration:
+
+- Build Command: `npm ci && npm run build`
+- Start Command: `npm start`
+- Node: `20.11.0`
+
+No unnecessary architecture rewrite was performed.

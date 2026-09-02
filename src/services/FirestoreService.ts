@@ -1,11 +1,13 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   QueryConstraint,
   query,
   serverTimestamp,
+  runTransaction,
   setDoc,
   where,
   writeBatch,
@@ -345,21 +347,27 @@ export const FirestoreService = {
       if (!uniqueIds.includes(id)) uniqueIds.push(id);
     });
 
-    const next = uniqueIds.map((id, index) => ({
-      ...(currentMap.get(id) as Script),
-      id,
-      order: index,
-      // The visible shortcut number follows the persisted order.
-      ...(index < 9 ? { keyNumber: index + 1 } : {}),
-    }));
+    const next = uniqueIds.map((id, index) => {
+      const script = currentMap.get(id) as Script;
+      const nextScript: Script = { ...script, id, order: index };
+      if (index < 9) nextScript.keyNumber = index + 1;
+      else delete nextScript.keyNumber;
+      return nextScript;
+    });
 
     setCachedData('scripts', next);
     notifyCollectionListeners('scripts', next);
 
     try {
-      const batch = writeBatch(requireDb());
-      next.forEach(({ id, ...script }) => {
-        batch.set(doc(requireDb(), 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      const db = requireDb();
+      const batch = writeBatch(db);
+      next.forEach((script) => {
+        const { id, ...data } = script;
+        const payload: Record<string, any> = { ...data, userId: uid, updatedAt: serverTimestamp() };
+        // Remove a stale shortcut number when a script moves beyond the first
+        // nine positions. Firestore merge otherwise preserves the old value.
+        if (script.keyNumber === undefined) payload.keyNumber = deleteField();
+        batch.set(doc(db, 'scripts', id), payload, { merge: true });
       });
       await batch.commit();
     } catch (error) {
@@ -393,7 +401,11 @@ export const FirestoreService = {
         const active = items.filter(c => c.active);
         const activeDefault = active.find(c => c.default);
         const defaultId = activeDefault?.id || active[0]?.id;
-        onUpdate(items.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) })));
+        const normalized = items.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) }));
+        // Cache the normalized state too. Without this, a reload could briefly
+        // restore the previous default from localStorage before the next snapshot.
+        setCachedData('closers', normalized);
+        onUpdate(normalized);
       },
       (id, data) => ({ id, ...data }) as Closer,
       undefined,
@@ -458,6 +470,39 @@ export const FirestoreService = {
       notifyCollectionListeners('closers', currentClosers);
       if (renamed) { setCachedData('appointments', currentAppointments); notifyAppointmentListeners(); }
       throw permissionMessage(error, 'save the closer and synchronize its appointments');
+    }
+  },
+
+  async setDefaultCloser(id: string): Promise<void> {
+    const uid = await requireUser();
+    const current = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
+    const target = current.find(c => c.id === id);
+    if (!target || !target.active) throw new Error('Only an active closer can be set as the default.');
+
+    const optimistic = current.map(c => ({ ...c, default: c.id === id && c.active }));
+    setCachedData('closers', optimistic);
+    notifyCollectionListeners('closers', optimistic);
+
+    try {
+      const db = requireDb();
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(query(collection(db, 'closers'), where('userId', '==', uid)));
+        const docs = snapshot.docs;
+        if (!docs.some(d => d.id === id)) throw new Error('The selected closer could not be found. Please refresh and try again.');
+        const selected = docs.find(d => d.id === id)?.data();
+        if (!selected?.active) throw new Error('Only an active closer can be set as the default.');
+        docs.forEach((closerDoc) => {
+          transaction.set(closerDoc.ref, {
+            default: closerDoc.id === id,
+            userId: uid,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        });
+      });
+    } catch (error) {
+      setCachedData('closers', current);
+      notifyCollectionListeners('closers', current);
+      throw permissionMessage(error, 'set the default closer');
     }
   },
 

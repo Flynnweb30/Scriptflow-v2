@@ -13,6 +13,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
     const [phone, setPhone] = useState('');
     const [isDefault, setIsDefault] = useState(false);
     const [editingCloserId, setEditingCloserId] = useState<string | null>(null);
+    const [busyCloserId, setBusyCloserId] = useState<string | null>(null);
 
     const handleAddOrEditCloser = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -52,6 +53,8 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
     };
 
     const handleToggleActive = async (closer: Closer) => {
+        if (busyCloserId) return;
+        setBusyCloserId(closer.id);
         try {
             await FirestoreService.saveCloser({
                 ...closer,
@@ -59,24 +62,32 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
             });
         } catch (error: any) {
             alert(error?.message || 'Unable to update the closer. Please try again.');
+        } finally {
+            setBusyCloserId(null);
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to remove this closer?')) {
-            try {
-                await FirestoreService.deleteCloser(id);
-            } catch (error: any) {
-                alert(error?.message || 'Unable to delete the closer. Please try again.');
-            }
+        if (!confirm('Are you sure you want to remove this closer?') || busyCloserId) return;
+        setBusyCloserId(id);
+        try {
+            await FirestoreService.deleteCloser(id);
+        } catch (error: any) {
+            alert(error?.message || 'Unable to delete the closer. Please try again.');
+        } finally {
+            setBusyCloserId(null);
         }
     };
 
     const handleSetDefault = async (closer: Closer) => {
+        if (busyCloserId || !closer.active) return;
+        setBusyCloserId(closer.id);
         try {
-            await FirestoreService.saveCloser({ ...closer, default: true });
+            await FirestoreService.setDefaultCloser(closer.id);
         } catch (error: any) {
             alert(error?.message || 'Unable to set the default closer. Please try again.');
+        } finally {
+            setBusyCloserId(null);
         }
     };
 
@@ -233,6 +244,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '14px', marginTop: '6px' }}>
                             <button
                                 onClick={() => handleToggleActive(closer)}
+                                disabled={busyCloserId !== null}
                                 style={{ border: 'none', background: 'transparent', color: closer.active ? 'var(--text-muted)' : 'var(--success)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
                             >
                                 {closer.active ? 'Deactivate' : 'Activate'}
@@ -242,6 +254,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
                                 {!closer.default && (
                                     <button
                                         onClick={() => handleSetDefault(closer)}
+                                        disabled={busyCloserId !== null}
                                         style={{ border: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
                                     >
                                         Make Default
@@ -256,6 +269,7 @@ export const CloserManagement: React.FC<CloserManagementProps> = ({ closers }) =
                                 </button>
                                 <button
                                     onClick={() => handleDelete(closer.id)}
+                                    disabled={busyCloserId !== null}
                                     style={{ border: 'none', background: 'var(--bg-primary)', color: 'var(--danger)', padding: '4px 8px', borderRadius: '6px', cursor: 'pointer' }}
                                     title="Delete"
                                 >

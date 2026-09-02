@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { Script, Appointment } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
+import { getTodayStrInTimezone, getWorkspaceTimezone } from '../utils/timezone-utils';
 
 interface SidebarProps {
     activeTab: string;
@@ -59,6 +60,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [draggedScriptKey, setDraggedScriptKey] = useState<string | null>(null);
     const [dragOverScriptKey, setDragOverScriptKey] = useState<string | null>(null);
     const [reorderingScriptKey, setReorderingScriptKey] = useState<string | null>(null);
+    const [workspaceTimezone, setWorkspaceTimezoneState] = useState(getWorkspaceTimezone());
+
+    useEffect(() => {
+        const syncTimezone = () => setWorkspaceTimezoneState(getWorkspaceTimezone());
+        window.addEventListener('scriptflow:timezone-change', syncTimezone);
+        window.addEventListener('storage', syncTimezone);
+        return () => {
+            window.removeEventListener('scriptflow:timezone-change', syncTimezone);
+            window.removeEventListener('storage', syncTimezone);
+        };
+    }, []);
 
     const handleScriptSelect = (key: string) => {
         setCurrentScriptKey(key);
@@ -104,13 +116,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }, [scripts]);
 
     const overdueCount = useMemo(() => {
-        const today = Utils.getTodayStr();
+        const today = getTodayStrInTimezone(workspaceTimezone);
         return appointments.filter((appt) => {
             const date = Utils.normalizeStoredAppointmentDate(appt);
             const done = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '') || Utils.isNoShow(appt);
             return Boolean(date && date < today && !done);
         }).length;
-    }, [appointments]);
+    }, [appointments, workspaceTimezone]);
 
     const filteredScripts = scriptEntries.filter(([_, item]) => {
         if (!searchQuery) return true;
@@ -337,7 +349,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     ) : (
                         filteredScripts.map(([key, script], idx) => {
                             const isActive = activeTab === 'scripts' && currentScriptKey === key;
-                            const keyNum = idx < 9 ? idx + 1 : undefined;
+                            const globalIndex = scriptEntries.findIndex(([entryKey]) => entryKey === key);
+                            const keyNum = globalIndex >= 0 && globalIndex < 9 ? globalIndex + 1 : undefined;
 
                             return (
                                 <div
