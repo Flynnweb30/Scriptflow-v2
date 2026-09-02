@@ -4,6 +4,7 @@ import { Utils } from '../utils/helpers';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
+import { getWorkspaceTimezone, setWorkspaceTimezone, US_TIMEZONE_OPTIONS, normalizeUSTimezone } from '../utils/timezone-utils';
 
 interface CalendarViewProps {
     appointments: Appointment[];
@@ -123,6 +124,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const [activityTypeFilter, setActivityTypeFilter] = useState<'all' | 'meeting' | 'callback' | 'followup'>('all');
     const [activitySubtypeFilter, setActivitySubtypeFilter] = useState('all');
     const [timezoneFilter, setTimezoneFilter] = useState('all');
+    const [workspaceTimezone, setWorkspaceTimezoneState] = useState(getWorkspaceTimezone());
     const [includeCompleted, setIncludeCompleted] = useState(false);
     const [sortKey, setSortKey] = useState<'date' | 'type' | 'owner' | 'status' | 'business'>('date');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -176,7 +178,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             const matchesAssigned = assignedFilter === 'all' || appt.assigned === assignedFilter || appt.closer === assignedFilter;
             const matchesTag = tagFilter === 'all' || (tagFilter === 'no_show' && Utils.hasTag(appt, 'no_show'));
             const matchesType = activityTypeFilter === 'all' || getActivityKind(appt) === activityTypeFilter;
-            const matchesTimezone = timezoneFilter === 'all' || (appt.timezone || 'Central CDT') === timezoneFilter;
+            const matchesTimezone = timezoneFilter === 'all' || normalizeUSTimezone(appt.timezone) === timezoneFilter;
             const query = searchTerm.trim().toLowerCase();
             const matchesSearch = !query || [appt.business, appt.contactName, appt.phone, appt.email, appt.notes]
                 .some(value => String(value || '').toLowerCase().includes(query));
@@ -213,7 +215,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         });
     }, [filteredAppointments, viewMode, listPreset, activityTypeFilter, activitySubtypeFilter, includeCompleted, customStart, customEnd, todayStr, getActivityKind]);
 
-    const timezones = useMemo(() => Array.from(new Set(appointments.map(a => a.timezone).filter(Boolean) as string[])).sort(), [appointments]);
+    const timezones = useMemo(() => {
+        const stored = appointments.map(a => a.timezone ? normalizeUSTimezone(a.timezone) : '').filter(Boolean);
+        return Array.from(new Set([...US_TIMEZONE_OPTIONS.map(option => option.value), ...stored])).sort();
+    }, [appointments]);
 
     // Navigation
     const handlePrev = useCallback(() => {
@@ -581,13 +586,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return (
         <div className="calendar-container" style={{ padding: '0 0 24px 0' }}>
             {/* Top Control Bar */}
-            <div style={{ 
+            <div className="activities-hero-nav" style={{ 
+                position: 'sticky',
+                top: 0,
+                zIndex: 40,
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'space-between', 
                 flexWrap: 'wrap', 
-                gap: '12px', 
-                marginBottom: '16px' 
+                gap: '12px',
+                padding: '10px 0 12px',
+                margin: '0 -2px 14px',
+                background: 'linear-gradient(180deg, #090d16 82%, rgba(9,13,22,0.94) 100%)',
+                borderBottom: '1px solid #142036',
+                boxShadow: '0 8px 20px rgba(0,0,0,0.18)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {viewMode !== 'kanban' && viewMode !== 'list' && (
@@ -672,6 +684,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                     )}
 
+                    <div className="activities-timezone-control" style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 8px 0 10px', borderRadius: '9px', border: '1px solid #1a2744', background: '#0d1527' }} title="Default timezone for new bookings">
+                        <i className="fas fa-globe-americas" style={{ fontSize: '11px', color: '#64748b' }}></i>
+                        <select
+                            value={workspaceTimezone}
+                            onChange={(e) => { setWorkspaceTimezoneState(e.target.value); setWorkspaceTimezone(e.target.value); }}
+                            aria-label="Default booking timezone"
+                            style={{ border: 'none', outline: 'none', background: 'transparent', color: '#dbeafe', fontSize: '11px', fontWeight: 800, cursor: 'pointer', maxWidth: '128px' }}
+                        >
+                            {US_TIMEZONE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                    </div>
                     <button 
                         onClick={() => onOpenQuickAdd()}
                         style={{
@@ -1334,7 +1357,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </div>
                         <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
                             <div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Status</div><div style={{ fontSize: 11, fontWeight: 800, color }}>{activity.status || 'Pending'}</div></div>
-                            <div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Timezone</div><div style={{ fontSize: 11, fontWeight: 800, color: '#cbd5e1' }}>{activity.timezone || 'Central CDT'}</div></div>
+                            <div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Timezone</div><div style={{ fontSize: 11, fontWeight: 800, color: '#cbd5e1' }}>{normalizeUSTimezone(activity.timezone)}</div></div>
                             {isMeeting && <><div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Closer</div><div style={{ fontSize: 11, fontWeight: 800, color: '#cbd5e1' }}>{activity.closer || 'Unassigned'}</div></div><div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Booker / Owner</div><div style={{ fontSize: 11, fontWeight: 800, color: '#cbd5e1' }}>{activity.assigned || 'Unassigned'}</div></div><div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Quality</div><div style={{ fontSize: 11, fontWeight: 800, color: '#cbd5e1' }}>{activity.qualityScore ?? '—'}</div></div><div style={{ padding: 8, borderRadius: 8, background: '#091020' }}><div style={{ fontSize: 9, color: '#64748b' }}>Confirmation</div><div style={{ fontSize: 11, fontWeight: 800, color: '#cbd5e1' }}>{activity.confirmationStatus || '—'}</div></div></>}
                         </div>
                         {isMeeting && <div style={{ marginTop: 8, fontSize: 10, color: '#64748b' }}>Website: {activity.websiteStatus || '—'}</div>}

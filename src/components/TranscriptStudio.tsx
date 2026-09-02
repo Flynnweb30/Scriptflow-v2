@@ -4,6 +4,7 @@ import { Appointment, Closer } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
+import { getWorkspaceTimezone } from '../utils/timezone-utils';
 
 interface TranscriptStudioProps {
     closers?: Closer[];
@@ -41,7 +42,7 @@ export const TranscriptStudio: React.FC<TranscriptStudioProps> = ({ onAppointmen
             email: extracted.email !== 'Not specified' ? extracted.email : '',
             date: Utils.getTodayStr(),
             time: '10:00 AM',
-            timezone: 'Central CDT',
+            timezone: getWorkspaceTimezone(),
             status: 'Hot Transfer',
             primaryStatus: 'Hot Transfer',
             assigned: CONFIG.DEFAULT_TEAM_MEMBERS.find(member => member.active)?.name || 'Daniel',

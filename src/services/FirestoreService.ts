@@ -13,6 +13,7 @@ import {
 import { getAppAuth, getAppFirestore } from '../config/firebase-config';
 import { Appointment, Closer, Script, Task } from '../types';
 import { CONFIG, DEFAULT_SCRIPTS } from '../config/constants';
+import { normalizeUSTimezone } from '../utils/timezone-utils';
 
 const CACHE_EXPIRY = 5 * 60 * 1000;
 const MAX_RETRIES = 3;
@@ -241,6 +242,7 @@ export const FirestoreService = {
     const createdAt = appointment.createdAt || existing?.createdAt || (!existing ? now : undefined);
     const data = {
       ...appointment,
+      ...(appointment.timezone ? { timezone: normalizeUSTimezone(appointment.timezone) } : {}),
       userId: uid,
       updatedAt: now,
       ...(createdAt ? { createdAt } : {}),
@@ -347,6 +349,8 @@ export const FirestoreService = {
       ...(currentMap.get(id) as Script),
       id,
       order: index,
+      // The visible shortcut number follows the persisted order.
+      ...(index < 9 ? { keyNumber: index + 1 } : {}),
     }));
 
     setCachedData('scripts', next);
@@ -385,7 +389,12 @@ export const FirestoreService = {
       'closers',
       'closers',
       CONFIG.DEFAULT_CLOSERS,
-      onUpdate,
+      (items) => {
+        const active = items.filter(c => c.active);
+        const activeDefault = active.find(c => c.default);
+        const defaultId = activeDefault?.id || active[0]?.id;
+        onUpdate(items.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) })));
+      },
       (id, data) => ({ id, ...data }) as Closer,
       undefined,
       onError,
@@ -399,46 +408,47 @@ export const FirestoreService = {
     const normalizedNext = closer.name.trim();
     if (!normalizedNext) throw new Error('Closer name is required.');
 
-    // Keep the closer collection authoritative: only one active closer can be default.
-    const normalizedCloser = { ...closer, name: normalizedNext, default: Boolean(closer.default && closer.active) };
-    const nextClosers = currentClosers.some((c) => c.id === closer.id)
-      ? currentClosers.map((c) => c.id === closer.id ? normalizedCloser : (normalizedCloser.default ? { ...c, default: false } : c))
-      : [...currentClosers.map((c) => normalizedCloser.default ? { ...c, default: false } : c), normalizedCloser];
+    const shouldBeDefault = Boolean(closer.default && closer.active);
+    let nextClosers = currentClosers.some(c => c.id === closer.id)
+      ? currentClosers.map(c => c.id === closer.id ? { ...closer, name: normalizedNext, default: shouldBeDefault } : c)
+      : [...currentClosers, { ...closer, name: normalizedNext, default: shouldBeDefault }];
+
+    if (shouldBeDefault) {
+      nextClosers = nextClosers.map(c => ({ ...c, default: c.id === closer.id && c.active }));
+    } else {
+      nextClosers = nextClosers.map(c => c.id === closer.id ? { ...c, default: false } : c);
+      if (!nextClosers.some(c => c.default && c.active)) {
+        const fallback = nextClosers.find(c => c.active);
+        if (fallback) nextClosers = nextClosers.map(c => ({ ...c, default: c.id === fallback.id }));
+      }
+    }
+
     const normalizedPrevious = previousName?.trim();
     const renamed = Boolean(normalizedPrevious && normalizedPrevious !== normalizedNext);
     const now = new Date().toISOString();
     const nextAppointments = renamed
-      ? currentAppointments.map((appointment) => appointment.closer === normalizedPrevious
+      ? currentAppointments.map(appointment => appointment.closer === normalizedPrevious
         ? { ...appointment, closer: normalizedNext, updatedAt: now }
         : appointment)
       : currentAppointments;
 
     setCachedData('closers', nextClosers);
     notifyCollectionListeners('closers', nextClosers);
-    if (renamed) {
-      setCachedData('appointments', nextAppointments);
-      notifyAppointmentListeners();
-    }
+    if (renamed) { setCachedData('appointments', nextAppointments); notifyAppointmentListeners(); }
 
     try {
       const db = requireDb();
       const batch = writeBatch(db);
-      if (normalizedCloser.default) {
-        currentClosers.forEach((existing) => {
-          if (existing.id !== normalizedCloser.id && existing.default) {
-            batch.set(doc(db, 'closers', existing.id), { default: false, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
-          }
-        });
-      }
-      batch.set(doc(db, 'closers', normalizedCloser.id), { ...normalizedCloser, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+      nextClosers.forEach(c => {
+        const previous = currentClosers.find(existing => existing.id === c.id);
+        if (!previous || previous.name !== c.name || previous.email !== c.email || previous.phone !== c.phone || previous.active !== c.active || previous.default !== c.default || c.id === closer.id) {
+          batch.set(doc(db, 'closers', c.id), { ...c, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+        }
+      });
       if (renamed) {
-        currentAppointments.forEach((appointment) => {
+        currentAppointments.forEach(appointment => {
           if (appointment.closer === normalizedPrevious) {
-            batch.set(doc(db, 'appointments', appointment.id), {
-              closer: normalizedNext,
-              userId: uid,
-              updatedAt: serverTimestamp(),
-            }, { merge: true });
+            batch.set(doc(db, 'appointments', appointment.id), { closer: normalizedNext, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
           }
         });
       }
@@ -446,22 +456,33 @@ export const FirestoreService = {
     } catch (error) {
       setCachedData('closers', currentClosers);
       notifyCollectionListeners('closers', currentClosers);
-      if (renamed) {
-        setCachedData('appointments', currentAppointments);
-        notifyAppointmentListeners();
-      }
+      if (renamed) { setCachedData('appointments', currentAppointments); notifyAppointmentListeners(); }
       throw permissionMessage(error, 'save the closer and synchronize its appointments');
     }
   },
 
   async deleteCloser(id: string): Promise<void> {
-    await requireUser();
+    const uid = await requireUser();
     const current = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
-    const next = current.filter((c) => c.id !== id);
+    const removed = current.find(c => c.id === id);
+    const remaining = current.filter(c => c.id !== id);
+    const fallback = remaining.find(c => c.active);
+    const existingDefault = remaining.find(c => c.active && c.default);
+    const defaultId = removed?.default ? fallback?.id : (existingDefault?.id || fallback?.id);
+    const next = remaining.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) }));
     setCachedData('closers', next);
     notifyCollectionListeners('closers', next);
     try {
-      await deleteDoc(doc(requireDb(), 'closers', id));
+      const db = requireDb();
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'closers', id));
+      next.forEach(c => {
+        const previous = current.find(existing => existing.id === c.id);
+        if (previous && previous.default !== c.default) {
+          batch.set(doc(db, 'closers', c.id), { default: c.default, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
+        }
+      });
+      await batch.commit();
     } catch (error) {
       setCachedData('closers', current);
       notifyCollectionListeners('closers', current);

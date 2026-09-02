@@ -336,3 +336,17 @@ body {
     .sidebar { width: 280px; }
     .main-content { padding: 16px; }
 }
+/* Activities hero navigation: remains visible while the list/timeline scrolls. */
+.activities-hero-nav {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.activities-timezone-control select option {
+    background: #0d1527;
+    color: #f8fafc;
+}
+@media (max-width: 720px) {
+    .activities-hero-nav { align-items: stretch !important; }
+    .activities-timezone-control { flex: 1 1 150px; }
+    .activities-timezone-control select { max-width: none !important; width: 100%; }
+}

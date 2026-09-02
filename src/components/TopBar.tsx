@@ -3,6 +3,7 @@ import { AppNotification, Appointment, Task } from '../types';
 import { NotificationManager } from '../managers/NotificationManager';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
+import { getWorkspaceTimezone } from '../utils/timezone-utils';
 
 interface TopBarProps {
     appointments: Appointment[];
@@ -157,7 +158,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                         const email = values[5] || '';
                         const date = values[6] || todayStr;
                         const time = values[7] || '2:00 PM';
-                        const timezone = values[8] || 'EST';
+                        const timezone = values[8] || getWorkspaceTimezone();
                         const status = (values[9] || 'Set') as any;
 
                         const newAppt: Partial<Appointment> & { id: string } = {

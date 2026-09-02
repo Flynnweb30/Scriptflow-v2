@@ -5,6 +5,7 @@ import { TimezoneUtils } from '../utils/timezone-utils';
 import { FirestoreService } from '../services/FirestoreService';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { CONFIG } from '../config/constants';
+import { US_TIMEZONE_OPTIONS, normalizeUSTimezone } from '../utils/timezone-utils';
 
 interface AppointmentDetailModalProps {
     appointment: Appointment | null;
@@ -28,7 +29,7 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
 
     useEffect(() => {
         if (appointment) {
-            setFormData({ ...appointment });
+            setFormData({ ...appointment, timezone: normalizeUSTimezone(appointment.timezone) });
             setIsEditing(false);
         }
     }, [appointment]);
@@ -50,13 +51,19 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
         const updated: Appointment = {
             ...appointment,
             ...formData,
+            timezone: normalizeUSTimezone(formData.timezone),
             primaryStatus: Utils.getPrimaryStatus(formData.status || 'Pending'),
             updatedAt: new Date().toISOString()
         } as Appointment;
 
-        await FirestoreService.saveAppointment(updated);
-        onSave(updated);
-        setIsEditing(false);
+        try {
+            await FirestoreService.saveAppointment(updated);
+            onSave(updated);
+            setIsEditing(false);
+        } catch (error: any) {
+            console.error('Appointment save failed:', error);
+            alert(error?.message || 'Unable to save this appointment. Please try again.');
+        }
     };
 
     const handleDelete = async () => {
@@ -239,6 +246,18 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                         placeholder="e.g. 2:00 PM"
                                         style={{ width: '100%', height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '13px' }}
                                     />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Appointment Timezone</label>
+                                    <select
+                                        value={normalizeUSTimezone(formData.timezone)}
+                                        onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                                        style={{ width: '100%', height: '40px', padding: '0 12px', borderRadius: '10px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '13px' }}
+                                    >
+                                        {US_TIMEZONE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Pipeline Status Stage</label>

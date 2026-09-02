@@ -9,6 +9,7 @@ import {
 } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
+import { getWorkspaceTimezone } from '../utils/timezone-utils';
 
 interface SmartImportModalProps {
     isOpen: boolean;
@@ -73,7 +74,7 @@ export const SmartImportModal: React.FC<SmartImportModalProps> = ({
                 email: rec.validated.email || '',
                 date: rec.validated.date || defaultDate,
                 time: rec.validated.time || '09:00 AM',
-                timezone: rec.validated.timezone || 'Central CDT',
+                timezone: rec.validated.timezone || getWorkspaceTimezone(),
                 status: rec.validated.status || 'Pending',
                 primaryStatus: Utils.getPrimaryStatus(rec.validated.status || 'Pending'),
                 assigned: rec.validated.assigned || CONFIG.DEFAULT_TEAM_MEMBERS.find(member => member.active)?.name || 'Daniel',

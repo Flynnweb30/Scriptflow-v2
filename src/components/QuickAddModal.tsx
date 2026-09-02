@@ -3,6 +3,7 @@ import { Appointment } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
+import { getWorkspaceTimezone, setWorkspaceTimezone, US_TIMEZONE_OPTIONS } from '../utils/timezone-utils';
 
 interface QuickAddModalProps {
     isOpen: boolean;
@@ -28,7 +29,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     const [email, setEmail] = useState('');
     const [date, setDate] = useState(defaultDate || Utils.getTodayStr());
     const [time, setTime] = useState('10:00 AM');
-    const [timezone, setTimezone] = useState('Central CDT');
+    const [timezone, setTimezone] = useState(getWorkspaceTimezone());
     const [status, setStatus] = useState(defaultStatus || 'New Lead');
     const [activityType, setActivityType] = useState<'meeting' | 'callback' | 'followup'>('meeting');
     const defaultCloser = closers.find(c => c.default && c.active) || closers.find(c => c.active) || CONFIG.DEFAULT_CLOSERS[0];
@@ -48,14 +49,14 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         setEmail('');
         setDate(defaultDate || Utils.getTodayStr());
         setTime('10:00 AM');
-        setTimezone('Central CDT');
+        setTimezone(getWorkspaceTimezone());
         setStatus(defaultStatus || 'New Lead');
         setActivityType(defaultStatus === 'Warm Callback' ? 'callback' : 'meeting');
         setCloser(defaultCloser?.name || '');
         setCallbackSetting('none');
         setNotes('');
         setNoShow(false);
-    }, [isOpen, defaultDate, defaultStatus, defaultCloser?.name]);
+    }, [isOpen, defaultDate, defaultStatus, defaultCloser?.id, defaultCloser?.name]);
 
     if (!isOpen) return null;
 
@@ -197,13 +198,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                     />
                                     <select 
                                         value={timezone}
-                                        onChange={(e) => setTimezone(e.target.value)}
+                                        onChange={(e) => { setTimezone(e.target.value); setWorkspaceTimezone(e.target.value); }}
                                         style={{ width: '40%', height: '40px', padding: '0 8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '12px' }}
                                     >
-                                        <option value="Eastern EDT">EDT</option>
-                                        <option value="Central CDT">CDT</option>
-                                        <option value="Mountain MDT">MDT</option>
-                                        <option value="Pacific PDT">PDT</option>
+                                        {US_TIMEZONE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                     </select>
                                 </div>
                             </div>

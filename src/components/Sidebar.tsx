@@ -337,7 +337,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     ) : (
                         filteredScripts.map(([key, script], idx) => {
                             const isActive = activeTab === 'scripts' && currentScriptKey === key;
-                            const keyNum = script.keyNumber || (idx < 9 ? idx + 1 : undefined);
+                            const keyNum = idx < 9 ? idx + 1 : undefined;
 
                             return (
                                 <div
