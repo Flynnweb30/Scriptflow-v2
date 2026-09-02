@@ -1,13 +1,12 @@
 import {
   collection,
   deleteDoc,
-  deleteField,
   doc,
+  getDocs,
   onSnapshot,
   QueryConstraint,
   query,
   serverTimestamp,
-  runTransaction,
   setDoc,
   where,
   writeBatch,
@@ -347,27 +346,21 @@ export const FirestoreService = {
       if (!uniqueIds.includes(id)) uniqueIds.push(id);
     });
 
-    const next = uniqueIds.map((id, index) => {
-      const script = currentMap.get(id) as Script;
-      const nextScript: Script = { ...script, id, order: index };
-      if (index < 9) nextScript.keyNumber = index + 1;
-      else delete nextScript.keyNumber;
-      return nextScript;
-    });
+    const next = uniqueIds.map((id, index) => ({
+      ...(currentMap.get(id) as Script),
+      id,
+      order: index,
+      // The visible shortcut number follows the persisted order.
+      keyNumber: index + 1,
+    }));
 
     setCachedData('scripts', next);
     notifyCollectionListeners('scripts', next);
 
     try {
-      const db = requireDb();
-      const batch = writeBatch(db);
-      next.forEach((script) => {
-        const { id, ...data } = script;
-        const payload: Record<string, any> = { ...data, userId: uid, updatedAt: serverTimestamp() };
-        // Remove a stale shortcut number when a script moves beyond the first
-        // nine positions. Firestore merge otherwise preserves the old value.
-        if (script.keyNumber === undefined) payload.keyNumber = deleteField();
-        batch.set(doc(db, 'scripts', id), payload, { merge: true });
+      const batch = writeBatch(requireDb());
+      next.forEach(({ id, ...script }) => {
+        batch.set(doc(requireDb(), 'scripts', id), { ...script, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
       });
       await batch.commit();
     } catch (error) {
@@ -401,11 +394,7 @@ export const FirestoreService = {
         const active = items.filter(c => c.active);
         const activeDefault = active.find(c => c.default);
         const defaultId = activeDefault?.id || active[0]?.id;
-        const normalized = items.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) }));
-        // Cache the normalized state too. Without this, a reload could briefly
-        // restore the previous default from localStorage before the next snapshot.
-        setCachedData('closers', normalized);
-        onUpdate(normalized);
+        onUpdate(items.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) })));
       },
       (id, data) => ({ id, ...data }) as Closer,
       undefined,
@@ -415,49 +404,74 @@ export const FirestoreService = {
 
   async saveCloser(closer: Closer, previousName?: string): Promise<void> {
     const uid = await requireUser();
-    const currentClosers = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
-    const currentAppointments = getCachedData<Appointment[]>('appointments', []);
+    const db = requireDb();
     const normalizedNext = closer.name.trim();
     if (!normalizedNext) throw new Error('Closer name is required.');
 
-    const shouldBeDefault = Boolean(closer.default && closer.active);
-    let nextClosers = currentClosers.some(c => c.id === closer.id)
-      ? currentClosers.map(c => c.id === closer.id ? { ...closer, name: normalizedNext, default: shouldBeDefault } : c)
-      : [...currentClosers, { ...closer, name: normalizedNext, default: shouldBeDefault }];
-
-    if (shouldBeDefault) {
-      nextClosers = nextClosers.map(c => ({ ...c, default: c.id === closer.id && c.active }));
-    } else {
-      nextClosers = nextClosers.map(c => c.id === closer.id ? { ...c, default: false } : c);
-      if (!nextClosers.some(c => c.default && c.active)) {
-        const fallback = nextClosers.find(c => c.active);
-        if (fallback) nextClosers = nextClosers.map(c => ({ ...c, default: c.id === fallback.id }));
-      }
+    // Read the authoritative user-owned closer set immediately before a write.
+    // This prevents a stale local cache (or another open tab) from restoring an
+    // older default when the user switches the default closer.
+    let authoritativeClosers = getCachedData<Closer[]>('closers', []);
+    try {
+      const snapshot = await getDocs(query(collection(db, 'closers'), where('userId', '==', uid)));
+      authoritativeClosers = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Closer));
+    } catch (error) {
+      console.warn('Using cached closer state after fresh closer read failed:', error);
     }
 
-    const normalizedPrevious = previousName?.trim();
+    const currentAppointments = getCachedData<Appointment[]>('appointments', []);
+    const existing = authoritativeClosers.find(c => c.id === closer.id);
+    const nextRecord: Closer = {
+      ...(existing || {}),
+      ...closer,
+      id: closer.id,
+      name: normalizedNext,
+      active: closer.active !== false,
+      default: Boolean(closer.default && closer.active !== false),
+    };
+
+    let nextClosers = authoritativeClosers.some(c => c.id === closer.id)
+      ? authoritativeClosers.map(c => c.id === closer.id ? nextRecord : c)
+      : [...authoritativeClosers, nextRecord];
+
+    // Exactly one active default is allowed. If the requested closer is not
+    // default (including when the current default is deactivated), promote the
+    // first available active closer instead of leaving the workspace without one.
+    const requestedDefault = nextRecord.default && nextRecord.active;
+    if (requestedDefault) {
+      nextClosers = nextClosers.map(c => ({ ...c, default: c.id === nextRecord.id && c.active }));
+    } else {
+      const activeExistingDefault = nextClosers.find(c => c.active && c.default && c.id !== nextRecord.id);
+      const fallback = activeExistingDefault || nextClosers.find(c => c.active);
+      nextClosers = nextClosers.map(c => ({ ...c, default: Boolean(fallback && c.id === fallback.id && c.active) }));
+    }
+
+    const normalizedPrevious = previousName?.trim() || existing?.name?.trim();
     const renamed = Boolean(normalizedPrevious && normalizedPrevious !== normalizedNext);
-    const now = new Date().toISOString();
     const nextAppointments = renamed
       ? currentAppointments.map(appointment => appointment.closer === normalizedPrevious
-        ? { ...appointment, closer: normalizedNext, updatedAt: now }
+        ? { ...appointment, closer: normalizedNext, updatedAt: new Date().toISOString() }
         : appointment)
       : currentAppointments;
 
     setCachedData('closers', nextClosers);
     notifyCollectionListeners('closers', nextClosers);
-    if (renamed) { setCachedData('appointments', nextAppointments); notifyAppointmentListeners(); }
+    if (renamed) {
+      setCachedData('appointments', nextAppointments);
+      notifyAppointmentListeners();
+    }
 
     try {
-      const db = requireDb();
       const batch = writeBatch(db);
       nextClosers.forEach(c => {
-        const previous = currentClosers.find(existing => existing.id === c.id);
-        if (!previous || previous.name !== c.name || previous.email !== c.email || previous.phone !== c.phone || previous.active !== c.active || previous.default !== c.default || c.id === closer.id) {
+        const previous = authoritativeClosers.find(existingCloser => existingCloser.id === c.id);
+        const changed = !previous || previous.name !== c.name || previous.email !== c.email || previous.phone !== c.phone || previous.active !== c.active || previous.default !== c.default || c.id === closer.id;
+        if (changed) {
           batch.set(doc(db, 'closers', c.id), { ...c, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
         }
       });
       if (renamed) {
+        // Keep historical appointments consistent with the renamed closer.
         currentAppointments.forEach(appointment => {
           if (appointment.closer === normalizedPrevious) {
             batch.set(doc(db, 'appointments', appointment.id), { closer: normalizedNext, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
@@ -466,63 +480,35 @@ export const FirestoreService = {
       }
       await batch.commit();
     } catch (error) {
-      setCachedData('closers', currentClosers);
-      notifyCollectionListeners('closers', currentClosers);
+      setCachedData('closers', authoritativeClosers);
+      notifyCollectionListeners('closers', authoritativeClosers);
       if (renamed) { setCachedData('appointments', currentAppointments); notifyAppointmentListeners(); }
       throw permissionMessage(error, 'save the closer and synchronize its appointments');
     }
   },
 
-  async setDefaultCloser(id: string): Promise<void> {
-    const uid = await requireUser();
-    const current = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
-    const target = current.find(c => c.id === id);
-    if (!target || !target.active) throw new Error('Only an active closer can be set as the default.');
-
-    const optimistic = current.map(c => ({ ...c, default: c.id === id && c.active }));
-    setCachedData('closers', optimistic);
-    notifyCollectionListeners('closers', optimistic);
-
-    try {
-      const db = requireDb();
-      await runTransaction(db, async (transaction) => {
-        const snapshot = await transaction.get(query(collection(db, 'closers'), where('userId', '==', uid)));
-        const docs = snapshot.docs;
-        if (!docs.some(d => d.id === id)) throw new Error('The selected closer could not be found. Please refresh and try again.');
-        const selected = docs.find(d => d.id === id)?.data();
-        if (!selected?.active) throw new Error('Only an active closer can be set as the default.');
-        docs.forEach((closerDoc) => {
-          transaction.set(closerDoc.ref, {
-            default: closerDoc.id === id,
-            userId: uid,
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        });
-      });
-    } catch (error) {
-      setCachedData('closers', current);
-      notifyCollectionListeners('closers', current);
-      throw permissionMessage(error, 'set the default closer');
-    }
-  },
-
   async deleteCloser(id: string): Promise<void> {
     const uid = await requireUser();
-    const current = getCachedData<Closer[]>('closers', CONFIG.DEFAULT_CLOSERS as Closer[]);
+    const db = requireDb();
+    let current = getCachedData<Closer[]>('closers', []);
+    try {
+      const snapshot = await getDocs(query(collection(db, 'closers'), where('userId', '==', uid)));
+      current = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Closer));
+    } catch (error) {
+      console.warn('Using cached closer state after fresh closer read failed:', error);
+    }
     const removed = current.find(c => c.id === id);
     const remaining = current.filter(c => c.id !== id);
-    const fallback = remaining.find(c => c.active);
     const existingDefault = remaining.find(c => c.active && c.default);
-    const defaultId = removed?.default ? fallback?.id : (existingDefault?.id || fallback?.id);
-    const next = remaining.map(c => ({ ...c, default: Boolean(defaultId && c.id === defaultId && c.active) }));
+    const fallback = existingDefault || remaining.find(c => c.active);
+    const next = remaining.map(c => ({ ...c, default: Boolean(fallback && c.id === fallback.id && c.active) }));
     setCachedData('closers', next);
     notifyCollectionListeners('closers', next);
     try {
-      const db = requireDb();
       const batch = writeBatch(db);
       batch.delete(doc(db, 'closers', id));
       next.forEach(c => {
-        const previous = current.find(existing => existing.id === c.id);
+        const previous = current.find(existingCloser => existingCloser.id === c.id);
         if (previous && previous.default !== c.default) {
           batch.set(doc(db, 'closers', c.id), { default: c.default, userId: uid, updatedAt: serverTimestamp() }, { merge: true });
         }

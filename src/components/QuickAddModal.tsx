@@ -3,8 +3,7 @@ import { Appointment } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
-import { getWorkspaceTimezone, getTodayStrInTimezone, setWorkspaceTimezone, US_TIMEZONE_OPTIONS } from '../utils/timezone-utils';
-import { getDefaultCloser } from '../utils/closer-utils';
+import { getWorkspaceTimezone, setWorkspaceTimezone, US_TIMEZONE_OPTIONS } from '../utils/timezone-utils';
 
 interface QuickAddModalProps {
     isOpen: boolean;
@@ -28,12 +27,12 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     const [role, setRole] = useState('');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
-    const [date, setDate] = useState(defaultDate || getTodayStrInTimezone());
+    const [date, setDate] = useState(defaultDate || Utils.getTodayStr());
     const [time, setTime] = useState('10:00 AM');
     const [timezone, setTimezone] = useState(getWorkspaceTimezone());
     const [status, setStatus] = useState(defaultStatus || 'New Lead');
     const [activityType, setActivityType] = useState<'meeting' | 'callback' | 'followup'>('meeting');
-    const defaultCloser = getDefaultCloser(closers);
+    const defaultCloser = closers.find(c => c.default && c.active) || closers.find(c => c.active) || CONFIG.DEFAULT_CLOSERS[0];
     const [closer, setCloser] = useState(defaultCloser?.name || '');
     const [callbackSetting, setCallbackSetting] = useState('none');
     const [notes, setNotes] = useState('');
@@ -48,7 +47,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         setRole('');
         setPhone('');
         setEmail('');
-        setDate(defaultDate || getTodayStrInTimezone());
+        setDate(defaultDate || Utils.getTodayStr());
         setTime('10:00 AM');
         setTimezone(getWorkspaceTimezone());
         setStatus(defaultStatus || 'New Lead');
@@ -65,7 +64,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         e.preventDefault();
         if (!business.trim() || !contactName.trim()) return;
 
-        const normalizedDate = Utils.normalizeDateOnly(date) || getTodayStrInTimezone(timezone);
+        const normalizedDate = Utils.normalizeDateOnly(date) || Utils.getTodayStr();
 
         const newAppt: Appointment = {
             id: 'appt_' + Utils.generateId(),

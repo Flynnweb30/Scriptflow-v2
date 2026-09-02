@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Appointment } from '../types';
 import { FirestoreService } from '../services/FirestoreService';
 import { CONFIG } from '../config/constants';
-import { getDefaultCloser } from '../utils/closer-utils';
 
 interface BulkActionsModalProps {
     isOpen: boolean;
@@ -21,7 +20,7 @@ export const BulkActionsModal: React.FC<BulkActionsModalProps> = ({
 }) => {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [targetStatus, setTargetStatus] = useState<string>('Meeting Booked');
-    const defaultCloser = getDefaultCloser(closers);
+    const defaultCloser = closers.find(c => c.default && c.active) || closers.find(c => c.active) || CONFIG.DEFAULT_CLOSERS[0];
     const [targetCloser, setTargetCloser] = useState<string>(defaultCloser?.name || '');
     const [targetDate, setTargetDate] = useState<string>('');
     const [actionType, setActionType] = useState<'status' | 'closer' | 'reschedule' | 'delete'>('status');

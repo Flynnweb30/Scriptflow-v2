@@ -191,6 +191,77 @@ body {
 .slide-down { animation: slideDown 0.3s ease forwards; }
 .pulse { animation: pulse 2s ease-in-out infinite; }
 
+
+/* Fixed, transparent US timezone hero clock. It stays centered above the
+   workspace without consuming sidebar space or covering interactive content. */
+.us-timezone-bar {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 34px;
+    max-width: calc(100vw - 32px);
+    padding: 7px 14px;
+    border: 1px solid rgba(71, 85, 105, 0.48);
+    border-radius: 999px;
+    background: rgba(3, 7, 18, 0.58);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+    color: #cbd5e1;
+    font-size: 10px;
+    line-height: 1;
+    pointer-events: none;
+    white-space: nowrap;
+}
+.us-timezone-exact,
+.us-timezone-clock {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.us-timezone-exact { font-weight: 800; color: #e2e8f0; }
+.us-timezone-exact-label { font-size: 8px; letter-spacing: .09em; color: #64748b; }
+.us-timezone-live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,.75);
+}
+.us-timezone-divider { width: 1px; height: 16px; background: rgba(100,116,139,.35); }
+.us-timezone-clock { color: #94a3b8; }
+.us-timezone-label { font-weight: 900; letter-spacing: .04em; color: #7dd3fc; }
+.us-timezone-value { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+    .us-timezone-bar { gap: 8px; padding: 7px 10px; font-size: 9px; }
+    .us-timezone-divider { display: none; }
+    .us-timezone-exact-label { display: none; }
+}
+
+@media (max-width: 640px) {
+    .us-timezone-bar {
+        top: 6px;
+        max-width: calc(100vw - 12px);
+        overflow: hidden;
+        gap: 7px;
+    }
+    .us-timezone-exact { display: none; }
+    .us-timezone-clock { gap: 4px; }
+    .us-timezone-value { font-size: 8px; }
+    .main-content { padding-top: 62px !important; }
+}
+
+body.light-theme .us-timezone-bar {
+    background: rgba(255,255,255,.72);
+    border-color: rgba(148,163,184,.45);
+    color: #334155;
+    box-shadow: 0 8px 24px rgba(15,23,42,.10);
+}
+
 /* ============================================================
    LAYOUT
    ============================================================ */
@@ -336,99 +407,17 @@ body {
     .sidebar { width: 280px; }
     .main-content { padding: 16px; }
 }
-
-/* ============================================================
-   GLOBAL US TIMEZONE BAR
-   Fixed, centered, transparent and intentionally independent of
-   the page hero so it remains visible across every workspace.
-   ============================================================ */
-.us-timezone-bar {
-    position: fixed;
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 80;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    min-height: 34px;
-    padding: 3px 5px 3px 9px;
-    border: 1px solid rgba(71, 85, 105, 0.45);
-    border-radius: 999px;
-    background: rgba(3, 7, 18, 0.58);
-    backdrop-filter: blur(14px) saturate(130%);
-    -webkit-backdrop-filter: blur(14px) saturate(130%);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
-    white-space: nowrap;
+/* Activities hero navigation: remains visible while the list/timeline scrolls. */
+.activities-hero-nav {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
-
-.us-timezone-bar__label {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding-right: 3px;
-    color: #94a3b8;
-    font-size: 9px;
-    font-weight: 900;
-    letter-spacing: 0.08em;
+.activities-timezone-control select option {
+    background: #0d1527;
+    color: #f8fafc;
 }
-
-.us-timezone-bar__label i {
-    font-size: 10px;
-    color: #64748b !important;
-}
-
-.us-timezone-bar__zones {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-}
-
-.us-timezone-chip {
-    min-width: 43px;
-    height: 26px;
-    padding: 0 9px;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: transparent;
-    color: #94a3b8;
-    font: inherit;
-    font-size: 10px;
-    font-weight: 850;
-    letter-spacing: 0.02em;
-    cursor: pointer;
-    transition: background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease;
-}
-
-.us-timezone-chip:hover {
-    color: #e2e8f0;
-    background: rgba(30, 41, 59, 0.58);
-    border-color: rgba(71, 85, 105, 0.5);
-}
-
-.us-timezone-chip.is-active {
-    color: #dbeafe;
-    background: rgba(37, 99, 235, 0.28);
-    border-color: rgba(96, 165, 250, 0.55);
-    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
-}
-
-.us-timezone-chip:focus-visible {
-    outline: 2px solid rgba(96, 165, 250, 0.85);
-    outline-offset: 2px;
-}
-
 @media (max-width: 720px) {
-    .us-timezone-bar {
-        top: 6px;
-        max-width: calc(100vw - 16px);
-        padding-left: 6px;
-        gap: 3px;
-    }
-    .us-timezone-bar__label span { display: none; }
-    .us-timezone-chip { min-width: 39px; padding: 0 7px; }
-}
-
-@media (max-width: 430px) {
-    .us-timezone-bar { transform: translateX(-50%) scale(0.92); transform-origin: top center; }
+    .activities-hero-nav { align-items: stretch !important; }
+    .activities-timezone-control { flex: 1 1 150px; }
+    .activities-timezone-control select { max-width: none !important; width: 100%; }
 }
