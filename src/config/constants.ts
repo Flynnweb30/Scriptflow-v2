@@ -1,9 +1,7 @@
 export const CONFIG = {
     PRIMARY_STATUSES: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled'],
     SECONDARY_STATUSES: ['Meeting Booked', 'Rescheduled', 'Overdue', 'Held'],
-    STATUS_OPTIONS: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Rescheduled', 'Overdue', 'Held', 'No Show', 'Quarantined'],
-    STAGE_OPTIONS: ['New', 'Open', 'Meeting set', 'Not interested', 'Do not call', 'Invalid', 'Held'],
-    MEETING_STATUS_OPTIONS: ['Scheduled', 'Rescheduled', 'Completed', 'No show', 'Cancelled', 'Quarantined'],
+    STATUS_OPTIONS: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Rescheduled', 'Overdue', 'Held', 'No Show'],
     STATUS_COLORS: {
         'New Lead': '#64748b',
         'Attempted': '#f59e0b',
@@ -23,7 +21,8 @@ export const CONFIG = {
         { id: 'unqualified_warm_callback', name: 'Unqualified Warm Callback', color: '#f59e0b' },
         { id: 'vip', name: 'VIP', color: '#3b82f6' },
         { id: 'negligent_warm_callback', name: 'Negligent Warm Callback', color: '#ef4444' },
-        { id: 'no_show', name: 'No Show', color: '#ef4444' }
+        { id: 'no_show', name: 'No Show', color: '#ef4444' },
+        { id: 'quarantined', name: 'Quarantined', color: '#a78bfa' }
     ],
     DEFAULT_TEAM_MEMBERS: [
         { id: 'daniel', name: 'Daniel', role: 'Team Lead', email: 'daniel@company.com', phone: '+1-555-0101', avatar: '👨‍💼', color: '#3b82f6', active: true },

@@ -114,9 +114,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const [currentDate, setCurrentDate] = useState(new Date());
     const [viewMode, setViewMode] = useState<'kanban' | 'month' | 'week' | 'day' | 'list'>('month');
     const [statusFilter, setStatusFilter] = useState<string>('all');
-    const [stageFilter, setStageFilter] = useState<string>('all');
     const [assignedFilter, setAssignedFilter] = useState<string>('all');
     const [tagFilter, setTagFilter] = useState<string>('all');
+    const [stageFilter, setStageFilter] = useState<string>('all');
+    const [activityMenuOpen, setActivityMenuOpen] = useState<'meeting' | 'callback' | 'followup' | null>(null);
+    const [meetingSubtype, setMeetingSubtype] = useState<'all' | 'initial' | 'followup'>('all');
+    const [meetingStatusFilters, setMeetingStatusFilters] = useState<string[]>([]);
+    const [callbackSubtype, setCallbackSubtype] = useState('all');
+    const [followupSubtype, setFollowupSubtype] = useState('all');
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [draggedApptId, setDraggedApptId] = useState<string | null>(null);
     const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
@@ -133,9 +138,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const [selectedCalendarActivity, setSelectedCalendarActivity] = useState<Appointment | null>(null);
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
-    const [activityMenu, setActivityMenu] = useState<'meeting' | 'callback' | 'followup' | null>(null);
-    const [meetingKindFilter, setMeetingKindFilter] = useState<'all' | 'Initial' | 'Follow-up'>('all');
-    const [meetingStatusFilters, setMeetingStatusFilters] = useState<string[]>([]);
 
     useEffect(() => {
         setViewMode('list');
@@ -178,18 +180,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     // Shared appointment filter used by every calendar/list mode.
     const filteredAppointments = useMemo(() => {
         return appointments.filter(appt => {
+            const kind = getActivityKind(appt);
             const matchesStatus = statusFilter === 'all' || appt.status === statusFilter;
-            const matchesStage = stageFilter === 'all' || (appt.stage || 'Open') === stageFilter;
             const matchesAssigned = assignedFilter === 'all' || appt.assigned === assignedFilter || appt.closer === assignedFilter;
-            const matchesTag = tagFilter === 'all' || (tagFilter === 'no_show' && Utils.hasTag(appt, 'no_show'));
-            const matchesType = activityTypeFilter === 'all' || getActivityKind(appt) === activityTypeFilter;
+            const matchesTag = tagFilter === 'all' || (tagFilter === 'no_show' && Utils.hasTag(appt, 'no_show')) || Utils.hasTag(appt, tagFilter);
+            const matchesStage = stageFilter === 'all' || PIPELINE_STAGES.find(stage => stage.id === stageFilter)?.matchStatuses.includes(appt.status || 'Pending');
+            const matchesType = activityTypeFilter === 'all' || kind === activityTypeFilter;
+            const meetingStatusMatch = meetingStatusFilters.length === 0 || meetingStatusFilters.some(filter => {
+                if (filter === 'Scheduled') return ['Meeting Booked', 'Scheduled'].includes(appt.status || '');
+                if (filter === 'Completed') return ['Completed', 'Held'].includes(appt.status || '');
+                if (filter === 'Cancelled') return ['Canceled', 'Cancelled'].includes(appt.status || '');
+                if (filter === 'Quarantined') return Utils.hasTag(appt, 'quarantined');
+                return appt.status === filter;
+            });
+            const matchesMeetingSubtype = kind !== 'meeting' || meetingSubtype === 'all' || (meetingSubtype === 'initial' ? !appt.followUpType : Boolean(appt.followUpType));
+            const matchesCallbackSubtype = kind !== 'callback' || callbackSubtype === 'all' || (appt.callbackKind || 'Callback') === callbackSubtype;
+            const matchesFollowupSubtype = kind !== 'followup' || followupSubtype === 'all' || (appt.followUpType || 'Follow-up') === followupSubtype;
             const matchesTimezone = timezoneFilter === 'all' || normalizeUSTimezone(appt.timezone) === timezoneFilter;
             const query = searchTerm.trim().toLowerCase();
             const matchesSearch = !query || [appt.business, appt.contactName, appt.phone, appt.email, appt.notes]
                 .some(value => String(value || '').toLowerCase().includes(query));
-            return matchesStatus && matchesStage && matchesAssigned && matchesTag && matchesType && matchesTimezone && matchesSearch;
+            return matchesStatus && matchesAssigned && matchesTag && matchesStage && matchesType && meetingStatusMatch && matchesMeetingSubtype && matchesCallbackSubtype && matchesFollowupSubtype && matchesTimezone && matchesSearch;
         });
-    }, [appointments, statusFilter, stageFilter, assignedFilter, tagFilter, activityTypeFilter, timezoneFilter, searchTerm, getActivityKind]);
+    }, [appointments, statusFilter, assignedFilter, tagFilter, stageFilter, activityTypeFilter, meetingSubtype, meetingStatusFilters, callbackSubtype, followupSubtype, timezoneFilter, searchTerm, getActivityKind]);
 
     const listFilteredAppointments = useMemo(() => {
         if (viewMode !== 'list') return filteredAppointments;
@@ -207,24 +220,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         return filteredAppointments.filter((appt) => {
             const apptDate = dateOnly(appt.date);
             const completed = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '') || Utils.isNoShow(appt);
+            const kind = getActivityKind(appt);
             const overdue = Boolean(apptDate && apptDate < today && !completed);
+            // Completed callbacks are terminal activity records and stay hidden
+            // from the work queue even when the user enables completed items.
+            if (kind === 'callback' && completed) return false;
             if (!includeCompleted && completed) return false;
             const matchesPreset = listPreset === 'todo' ? !completed : listPreset === 'overdue' ? overdue : (!start || apptDate >= start) && (!end || apptDate <= end);
             if (!matchesPreset) return false;
             if (activityTypeFilter !== 'all' && getActivityKind(appt) !== activityTypeFilter) return false;
-            if (activityTypeFilter === 'meeting') {
-                const meetingKind = appt.followUpType ? 'Follow-up' : 'Initial';
-                if (meetingKindFilter !== 'all' && meetingKind !== meetingKindFilter) return false;
-                const meetingStatus = appt.status === 'Meeting Booked' ? 'Scheduled' : appt.status === 'Canceled' ? 'Cancelled' : appt.status === 'No Show' ? 'No show' : (appt.status || 'Scheduled');
-                if (meetingStatusFilters.length && !meetingStatusFilters.includes(meetingStatus)) return false;
-            }
             if (activitySubtypeFilter !== 'all') {
                 const subtype = activityTypeFilter === 'callback' ? (appt.callbackKind || 'Callback') : activityTypeFilter === 'followup' ? (appt.followUpType || 'Follow-up') : (appt.status || '');
                 if (subtype !== activitySubtypeFilter) return false;
             }
             return true;
         });
-    }, [filteredAppointments, viewMode, listPreset, activityTypeFilter, activitySubtypeFilter, includeCompleted, customStart, customEnd, todayStr, getActivityKind, meetingKindFilter, meetingStatusFilters]);
+    }, [filteredAppointments, viewMode, listPreset, activityTypeFilter, activitySubtypeFilter, includeCompleted, customStart, customEnd, todayStr, getActivityKind]);
 
     const timezones = useMemo(() => {
         const stored = appointments.map(a => a.timezone ? normalizeUSTimezone(a.timezone) : '').filter(Boolean);
@@ -791,11 +802,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <select
                     value={stageFilter}
                     onChange={(e) => setStageFilter(e.target.value)}
-                    aria-label="Lead stage"
+                    aria-label="Pipeline stage"
                     style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px', outline: 'none' }}
                 >
                     <option value="all">All stages</option>
-                    {CONFIG.STAGE_OPTIONS.map(stage => <option key={stage} value={stage}>{stage}</option>)}
+                    {PIPELINE_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.title}</option>)}
                 </select>
 
                 <select 
@@ -858,7 +869,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     }}
                 >
                     <option value="all">All Tags</option>
-                    <option value="no_show">No-Show</option>
+                    {CONFIG.TAG_OPTIONS.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                 </select>
 
                 <span style={{ 
@@ -1096,43 +1107,70 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} aria-label="Custom end date" min={customStart || undefined} style={{ height: '32px', padding: '0 9px', borderRadius: '7px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px' }} />
                         </div>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: activityMenu ? '6px' : '14px' }}>
-                        <button onClick={() => { setActivityTypeFilter('all'); setActivitySubtypeFilter('all'); setActivityMenu(null); setMeetingStatusFilters([]); setMeetingKindFilter('all'); }} aria-pressed={activityTypeFilter === 'all'} style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${activityTypeFilter === 'all' ? '#64748b' : '#2a3852'}`, background: activityTypeFilter === 'all' ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>All</button>
-                        {([['meeting', 'Meetings', '#8b9cff'], ['callback', 'Callbacks', '#fbbf24'], ['followup', 'Follow-ups', '#34d399']] as const).map(([value, label, dot]) => (
-                            <button key={value} onClick={() => { const next = activityTypeFilter === value ? 'all' : value; setActivityTypeFilter(next); setActivitySubtypeFilter('all'); setActivityMenu(next === 'all' ? null : value); }} aria-expanded={activityMenu === value} aria-pressed={activityTypeFilter === value} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${activityTypeFilter === value ? dot : '#2a3852'}`, background: activityTypeFilter === value ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }}></span>{label}<i className={`fas fa-chevron-${activityMenu === value ? 'up' : 'down'}`} style={{ fontSize: '8px', marginLeft: 2 }}></i></button>
-                        ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                        <button onClick={() => { setActivityTypeFilter('all'); setActivitySubtypeFilter('all'); setActivityMenuOpen(null); }} aria-pressed={activityTypeFilter === 'all'} style={{ padding: '8px 12px', borderRadius: '9px', border: '1px solid #2a3852', background: activityTypeFilter === 'all' ? '#18243b' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>All</button>
+                        {([
+                            ['meeting', 'Meetings', '#8b9cff'],
+                            ['callback', 'Callbacks', '#fbbf24'],
+                            ['followup', 'Follow-ups', '#34d399']
+                        ] as const).map(([value, label, dot]) => {
+                            const open = activityMenuOpen === value;
+                            const active = activityTypeFilter === value;
+                            return (
+                                <div key={value} style={{ position: 'relative', display: 'inline-flex' }}>
+                                    <button onClick={() => { setActivityTypeFilter(active ? 'all' : value); setActivitySubtypeFilter('all'); setActivityMenuOpen(open ? null : value); }} aria-expanded={open} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '8px 10px', borderRadius: '9px 0 0 9px', border: `1px solid ${active ? dot : '#2a3852'}`, borderRight: 'none', background: active ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }}></span>{label}</button>
+                                    <button onClick={() => setActivityMenuOpen(open ? null : value)} aria-label={`Open ${label} filters`} style={{ padding: '8px 8px', borderRadius: '0 9px 9px 0', border: `1px solid ${active ? dot : '#2a3852'}`, background: active ? '#162036' : '#0d1527', color: '#94a3b8', cursor: 'pointer' }}><i className={`fas fa-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: '9px' }}></i></button>
+                                    {open && (
+                                        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 120, width: value === 'meeting' ? 266 : 220, padding: '12px', borderRadius: '10px', border: '1px solid #2a3852', background: '#171a23', boxShadow: '0 14px 32px rgba(0,0,0,.4)' }}>
+                                            {value === 'meeting' ? (
+                                                <>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, marginBottom: '8px' }}>Meeting</div>
+                                                    <div style={{ display: 'flex', border: '1px solid #334155', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
+                                                        {([['all','All'],['initial','Initial'],['followup','Follow-up']] as const).map(([key, text]) => <button key={key} onClick={() => { setMeetingSubtype(key); setActivityTypeFilter('meeting'); }} style={{ flex: 1, padding: '7px 6px', border: 'none', borderRight: key !== 'followup' ? '1px solid #334155' : 'none', background: meetingSubtype === key ? '#3b4252' : 'transparent', color: '#e2e8f0', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>{text}</button>)}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, marginBottom: '6px' }}>Status</div>
+                                                    <div style={{ display: 'grid', gap: '6px' }}>
+                                                        {(['Scheduled','Rescheduled','Completed','No show','Cancelled','Quarantined'] as const).map(status => {
+                                                            const checked = meetingStatusFilters.includes(status);
+                                                            return <label key={status} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#e2e8f0', cursor: 'pointer' }}>
+                                                                <input type="checkbox" checked={checked} onChange={() => setMeetingStatusFilters(current => checked ? current.filter(item => item !== status) : [...current, status])} style={{ accentColor: '#8b9cff' }} />
+                                                                <span>{status}</span>
+                                                            </label>;
+                                                        })}
+                                                    </div>
+                                                    <button onClick={() => { setMeetingStatusFilters([]); setStatusFilter('all'); }} style={{ marginTop: '8px', border: 'none', background: 'transparent', color: '#60a5fa', fontSize: '10px', fontWeight: 800, cursor: 'pointer', padding: 0 }}>Clear status filters</button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, marginBottom: '8px' }}>{label.replace(/s$/, '')}</div>
+                                                    <select value={value === 'callback' ? callbackSubtype : followupSubtype} onChange={(e) => { setActivityTypeFilter(value); value === 'callback' ? setCallbackSubtype(e.target.value) : setFollowupSubtype(e.target.value); }} style={{ width: '100%', height: '32px', borderRadius: '7px', border: '1px solid #334155', background: '#0d1527', color: '#e2e8f0', fontSize: '11px', padding: '0 8px' }}>
+                                                        <option value="all">All {value === 'callback' ? 'Callback Kinds' : 'Follow-up Types'}</option>
+                                                        {Array.from(new Set(filteredAppointments.filter(appt => getActivityKind(appt) === value).map(appt => value === 'callback' ? (appt.callbackKind || 'Callback') : (appt.followUpType || 'Follow-up')))).sort().map(option => <option key={option} value={option}>{option}</option>)}
+                                                    </select>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
-                    {activityMenu && (
-                        <div style={{ marginBottom: '14px', padding: '12px', border: '1px solid #334155', borderRadius: '10px', background: '#0d1527', boxShadow: '0 14px 35px rgba(0,0,0,.25)' }}>
-                            {activityMenu === 'meeting' && (
-                                <div style={{ display: 'grid', gap: '10px' }}>
-                                    <div style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase' }}>Meeting</div>
-                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                        {(['all', 'Initial', 'Follow-up'] as const).map(kind => <button key={kind} onClick={() => setMeetingKindFilter(kind)} style={{ padding: '6px 10px', borderRadius: '7px', border: `1px solid ${meetingKindFilter === kind ? '#8b9cff' : '#2a3852'}`, background: meetingKindFilter === kind ? '#202c4d' : '#111a2c', color: '#e2e8f0', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}>{kind === 'all' ? 'All' : kind}</button>)}
-                                    </div>
-                                    <div style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase' }}>Status</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: '7px' }}>
-                                        {CONFIG.MEETING_STATUS_OPTIONS.map(status => <label key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px', border: '1px solid #24324a', borderRadius: '7px', color: '#cbd5e1', fontSize: '10px', cursor: 'pointer' }}><input type="checkbox" checked={meetingStatusFilters.includes(status)} onChange={(e) => setMeetingStatusFilters(prev => e.target.checked ? [...prev, status] : prev.filter(item => item !== status))} />{status}</label>)}
-                                    </div>
-                                </div>
-                            )}
-                            {activityMenu === 'callback' && (
-                                <div>
-                                    <div style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 8 }}>Callbacks</div>
-                                    {listFilteredAppointments.filter(a => getActivityKind(a) === 'callback').slice(0, 8).map(a => <button key={a.id} onClick={() => { setActivityMenu(null); onSelectAppointment(a); }} style={{ width: '100%', textAlign: 'left', border: 'none', borderBottom: '1px solid #1e293b', background: 'transparent', color: '#e2e8f0', padding: '8px 2px', cursor: 'pointer' }}><b style={{ fontSize: 11 }}>{a.business}</b><span style={{ display: 'block', fontSize: 10, color: '#64748b' }}>{a.contactName || 'No contact'} · {a.date} {a.time || ''} · {a.status}</span></button>)}
-                                    {!listFilteredAppointments.some(a => getActivityKind(a) === 'callback') && <div style={{ color: '#64748b', fontSize: 11 }}>No callbacks match the current filters.</div>}
-                                </div>
-                            )}
-                            {activityMenu === 'followup' && (
-                                <div>
-                                    <div style={{ fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 8 }}>Follow-ups</div>
-                                    {listFilteredAppointments.filter(a => getActivityKind(a) === 'followup').slice(0, 8).map(a => <button key={a.id} onClick={() => { setActivityMenu(null); onSelectAppointment(a); }} style={{ width: '100%', textAlign: 'left', border: 'none', borderBottom: '1px solid #1e293b', background: 'transparent', color: '#e2e8f0', padding: '8px 2px', cursor: 'pointer' }}><b style={{ fontSize: 11 }}>{a.business}</b><span style={{ display: 'block', fontSize: 10, color: '#64748b' }}>{a.contactName || 'No contact'} · {a.followUpType || 'Follow-up'} · {a.status}</span></button>)}
-                                    {!listFilteredAppointments.some(a => getActivityKind(a) === 'followup') && <div style={{ color: '#64748b', fontSize: 11 }}>No follow-ups match the current filters.</div>}
-                                </div>
-                            )}
+                    <div style={{ background: '#0d1527', border: '1px solid #1a2744', borderRadius: '14px', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '14px 16px', borderBottom: '1px solid #1a2744', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: '12px', color: '#94a3b8' }}>Showing <strong style={{ color: '#f8fafc' }}>{sortedListAppointments.length}</strong> activities</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '10px', color: '#64748b' }}>Central (CDT)</span>
+                                <button onClick={() => onOpenQuickAdd()} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid #2563eb', background: 'rgba(37,99,235,.12)', color: '#60a5fa', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><i className="fas fa-plus" style={{ marginRight: '6px' }}></i>Quick Add</button>
+                            </div>
                         </div>
-                    )}
-                    <div style={{ overflowX: 'auto' }}>
+                        {sortedListAppointments.length === 0 ? (
+                            <div style={{ padding: '48px 20px', textAlign: 'center', color: '#64748b' }}>
+                                <i className="fas fa-calendar-xmark" style={{ fontSize: '26px', marginBottom: '10px' }}></i>
+                                <div style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8' }}>No activities found</div>
+                                <div style={{ fontSize: '11px', marginTop: '4px' }}>Adjust the filters or add a new activity.</div>
+                            </div>
+                        ) : (
+                            <div style={{ overflowX: 'auto' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                                     <thead>
                                         <tr style={{ background: '#090e1a' }}>
@@ -1154,7 +1192,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                             const openRecord = () => onSelectAppointment(appt);
                                             const markDone = async () => {
                                                 if (completed) return;
-                                                try { await FirestoreService.completeCallback(appt.parentAppointmentId || appt.id); }
+                                                try { await FirestoreService.saveAppointment({ ...appt, status: 'Completed', primaryStatus: Utils.getPrimaryStatus('Completed'), updatedAt: new Date().toISOString() }); }
                                                 catch (error: any) { alert(error?.message || 'Unable to mark the activity done.'); }
                                             };
                                             const togglePause = async () => {
@@ -1198,6 +1236,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                     </tbody>
                                 </table>
                             </div>
+                        )}
+                    </div>
                 </>
             ) : viewMode === 'month' ? (
                 // Month View - Fixed Layout
