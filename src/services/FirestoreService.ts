@@ -14,7 +14,7 @@ import {
 import { getAppAuth, getAppFirestore } from '../config/firebase-config';
 import { Appointment, Closer, Script, Task } from '../types';
 import { CONFIG, DEFAULT_SCRIPTS } from '../config/constants';
-import { normalizeUSTimezone } from '../utils/timezone-utils';
+import { normalizeUSTimezone, TimezoneUtils } from '../utils/timezone-utils';
 
 const CACHE_EXPIRY = 5 * 60 * 1000;
 const MAX_RETRIES = 3;
@@ -237,40 +237,144 @@ export const FirestoreService = {
 
   async saveAppointment(appointment: Partial<Appointment> & { id: string }): Promise<void> {
     const uid = await requireUser();
+    const db = requireDb();
     const now = new Date().toISOString();
     const current = getCachedData<Appointment[]>('appointments', []);
     const existing = current.find((item) => item.id === appointment.id);
     const createdAt = appointment.createdAt || existing?.createdAt || (!existing ? now : undefined);
+    const normalizedTimezone = appointment.timezone ? normalizeUSTimezone(appointment.timezone) : (existing?.timezone ? normalizeUSTimezone(existing.timezone) : undefined);
     const data = {
       ...appointment,
-      ...(appointment.timezone ? { timezone: normalizeUSTimezone(appointment.timezone) } : {}),
+      ...(normalizedTimezone ? { timezone: normalizedTimezone } : {}),
       userId: uid,
       updatedAt: now,
       ...(createdAt ? { createdAt } : {}),
-    };
+    } as Appointment;
 
-    const next = current.some((item) => item.id === appointment.id)
-      ? current.map((item) => item.id === appointment.id ? { ...item, ...data } as Appointment : item)
-      : [data as Appointment, ...current];
-    setCachedData('appointments', next);
+    const isChildCallback = Boolean(data.parentAppointmentId);
+    const activityType = `${data.appointmentType || ''} ${data.eventType || ''}`.toLowerCase();
+    const isMeeting = !isChildCallback && !activityType.includes('callback') && !activityType.includes('follow');
+    const callbackId = `callback_${data.id}`;
+    const currentCallback = current.find((item) => item.id === callbackId || item.parentAppointmentId === data.id);
+    let callbackRecord: Appointment | null = null;
+
+    if (isMeeting && data.callbackSetting && data.callbackSetting !== 'none') {
+      const callbackAt = TimezoneUtils.calculateCallbackTime(data);
+      if (callbackAt) {
+        const local = TimezoneUtils.getLocalDateTimeParts(callbackAt, data.timezone);
+        const completed = currentCallback?.status === 'Completed' || currentCallback?.callbackCompletedAt;
+        callbackRecord = {
+          id: currentCallback?.id || callbackId,
+          userId: uid,
+          business: data.business || '',
+          contactName: data.contactName || '',
+          role: data.role,
+          phone: data.phone,
+          email: data.email,
+          date: local.date,
+          time: local.time,
+          timezone: normalizedTimezone || 'Central CDT',
+          status: completed ? 'Completed' : 'Pending',
+          primaryStatus: completed ? 'Completed' : 'Pending',
+          assigned: data.assigned,
+          closer: data.closer,
+          notes: `Callback reminder for ${data.business || 'appointment'}`,
+          appointmentType: 'callback',
+          eventType: 'callback',
+          callbackKind: 'Meeting Reminder',
+          parentAppointmentId: data.id,
+          callbackSetting: 'none',
+          callbackPaused: currentCallback?.callbackPaused ?? false,
+          callbackCompletedAt: currentCallback?.callbackCompletedAt,
+          createdAt: currentCallback?.createdAt || now,
+          updatedAt: now,
+        };
+      }
+    }
+
+    const callbackRemoved = isMeeting && (!data.callbackSetting || data.callbackSetting === 'none') && currentCallback;
+    const next = current.filter((item) => !(callbackRemoved && item.id === currentCallback?.id));
+    const nextMain = next.some((item) => item.id === data.id)
+      ? next.map((item) => item.id === data.id ? { ...item, ...data } : item)
+      : [data, ...next];
+    const nextAll = callbackRecord
+      ? (nextMain.some((item) => item.id === callbackRecord!.id)
+        ? nextMain.map((item) => item.id === callbackRecord!.id ? callbackRecord! : item)
+        : [callbackRecord, ...nextMain])
+      : nextMain;
+
+    setCachedData('appointments', nextAll);
     notifyAppointmentListeners();
 
     try {
-      await setDoc(doc(requireDb(), 'appointments', appointment.id), data, { merge: true });
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'appointments', data.id), data, { merge: true });
+      if (callbackRecord) {
+        batch.set(doc(db, 'appointments', callbackRecord.id), callbackRecord, { merge: true });
+      } else if (callbackRemoved) {
+        batch.delete(doc(db, 'appointments', currentCallback!.id));
+      }
+      await batch.commit();
     } catch (error) {
       setCachedData('appointments', current);
       notifyAppointmentListeners();
-      throw permissionMessage(error, 'save this appointment');
+      throw permissionMessage(error, 'save this appointment and synchronize its callback');
     }
   },
 
-  async deleteAppointment(id: string): Promise<void> {
-    await requireUser();
+  async completeCallback(appointmentId: string): Promise<void> {
+    const uid = await requireUser();
+    const db = requireDb();
     const current = getCachedData<Appointment[]>('appointments', []);
-    setCachedData('appointments', current.filter((a) => a.id !== id));
+    const parent = current.find((item) => item.id === appointmentId);
+    const callback = current.find((item) => item.parentAppointmentId === appointmentId || item.id === `callback_${appointmentId}`);
+    if (!parent && !callback) return;
+    const now = new Date().toISOString();
+    const callbackUpdate = callback ? {
+      ...callback,
+      status: 'Completed',
+      primaryStatus: 'Completed',
+      callbackCompletedAt: now,
+      callbackPaused: false,
+      updatedAt: now,
+      userId: uid,
+    } : null;
+    const parentUpdate = parent ? {
+      ...parent,
+      callbackTriggered: true,
+      updatedAt: now,
+      userId: uid,
+    } : null;
+    const next = current.map(item => {
+      if (callbackUpdate && item.id === callbackUpdate.id) return callbackUpdate;
+      if (parentUpdate && item.id === parentUpdate.id) return parentUpdate;
+      return item;
+    });
+    setCachedData('appointments', next);
     notifyAppointmentListeners();
     try {
-      await deleteDoc(doc(requireDb(), 'appointments', id));
+      const batch = writeBatch(db);
+      if (callbackUpdate) batch.set(doc(db, 'appointments', callbackUpdate.id), callbackUpdate, { merge: true });
+      if (parentUpdate) batch.set(doc(db, 'appointments', parentUpdate.id), parentUpdate, { merge: true });
+      await batch.commit();
+    } catch (error) {
+      setCachedData('appointments', current);
+      notifyAppointmentListeners();
+      throw permissionMessage(error, 'complete this callback');
+    }
+  },
+  async deleteAppointment(id: string): Promise<void> {
+    await requireUser();
+    const db = requireDb();
+    const current = getCachedData<Appointment[]>('appointments', []);
+    const callback = current.find((item) => item.parentAppointmentId === id || item.id === `callback_${id}`);
+    setCachedData('appointments', current.filter((a) => a.id !== id && a.id !== callback?.id));
+    notifyAppointmentListeners();
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'appointments', id));
+      if (callback) batch.delete(doc(db, 'appointments', callback.id));
+      await batch.commit();
     } catch (error) {
       setCachedData('appointments', current);
       notifyAppointmentListeners();

@@ -1,7 +1,9 @@
 export const CONFIG = {
     PRIMARY_STATUSES: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled'],
     SECONDARY_STATUSES: ['Meeting Booked', 'Rescheduled', 'Overdue', 'Held'],
-    STATUS_OPTIONS: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Rescheduled', 'Overdue', 'Held'],
+    STATUS_OPTIONS: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Rescheduled', 'Overdue', 'Held', 'No Show', 'Quarantined'],
+    STAGE_OPTIONS: ['New', 'Open', 'Meeting set', 'Not interested', 'Do not call', 'Invalid', 'Held'],
+    MEETING_STATUS_OPTIONS: ['Scheduled', 'Rescheduled', 'Completed', 'No show', 'Cancelled', 'Quarantined'],
     STATUS_COLORS: {
         'New Lead': '#64748b',
         'Attempted': '#f59e0b',

@@ -260,7 +260,7 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                     </select>
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Pipeline Status Stage</label>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Activity Status</label>
                                     <select 
                                         value={formData.status || 'Pending'}
                                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -269,6 +269,25 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                         {CONFIG.STATUS_OPTIONS.map(s => (
                                             <option key={s} value={s}>{s}</option>
                                         ))}
+                                    </select>
+                                </div>
+                                <div style={{ gridColumn: '1 / -1' }}>
+                                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '8px', color: '#94a3b8' }}>Status Tags</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '9px' }}>
+                                        {CONFIG.STATUS_OPTIONS.map(option => {
+                                            const active = formData.status === option;
+                                            const color = Utils.getStatusColor(option);
+                                            return <button key={option} type="button" onClick={() => setFormData(prev => ({ ...prev, status: option, primaryStatus: Utils.getPrimaryStatus(option) }))} style={{ border: `1px solid ${active ? color : '#2a3852'}`, background: active ? `${color}22` : '#111a2c', color: active ? color : '#cbd5e1', borderRadius: '999px', padding: '5px 9px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}>{option}</button>;
+                                        })}
+                                    </div>
+                                    <select
+                                        value={formData.stage || 'Open'}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, stage: e.target.value }))}
+                                        aria-label="Lead stage"
+                                        style={{ width: '100%', height: '38px', padding: '0 10px', borderRadius: '9px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '12px' }}
+                                    >
+                                        <option value="">No stage</option>
+                                        {CONFIG.STAGE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
                                     </select>
                                 </div>
                                 <div>
@@ -462,6 +481,23 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                             >
                                 <i className="fas fa-calendar-days" style={{ marginRight: '6px' }}></i>
                                 Reschedule
+                            </button>
+                        )}
+                        {((appointment.appointmentType || appointment.eventType || '').toLowerCase().includes('callback')) && appointment.status !== 'Completed' && (
+                            <button
+                                className="btn-primary"
+                                onClick={async () => {
+                                    try {
+                                        await FirestoreService.completeCallback(appointment.parentAppointmentId || appointment.id);
+                                        onClose();
+                                    } catch (error: any) {
+                                        alert(error?.message || 'Unable to complete this callback.');
+                                    }
+                                }}
+                                style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px', fontWeight: 800, background: '#16a34a' }}
+                            >
+                                <i className="fas fa-check" style={{ marginRight: '6px' }}></i>
+                                Complete Callback
                             </button>
                         )}
                         {!isEditing ? (

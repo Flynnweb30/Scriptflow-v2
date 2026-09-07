@@ -31,6 +31,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     const [time, setTime] = useState('10:00 AM');
     const [timezone, setTimezone] = useState(getWorkspaceTimezone());
     const [status, setStatus] = useState(defaultStatus || 'New Lead');
+    const [stage, setStage] = useState('Open');
     const [activityType, setActivityType] = useState<'meeting' | 'callback' | 'followup'>('meeting');
     const defaultCloser = closers.find(c => c.default && c.active) || closers.find(c => c.active) || CONFIG.DEFAULT_CLOSERS[0];
     const [closer, setCloser] = useState(defaultCloser?.name || '');
@@ -51,6 +52,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         setTime('10:00 AM');
         setTimezone(getWorkspaceTimezone());
         setStatus(defaultStatus || 'New Lead');
+        setStage('Open');
         setActivityType(defaultStatus === 'Warm Callback' ? 'callback' : 'meeting');
         setCloser(defaultCloser?.name || '');
         setCallbackSetting('none');
@@ -77,6 +79,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             time,
             timezone,
             status,
+            stage,
             primaryStatus: Utils.getPrimaryStatus(status),
             assigned: CONFIG.DEFAULT_TEAM_MEMBERS.find(member => member.active)?.name || 'Daniel',
             closer,
@@ -227,6 +230,16 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                     {CONFIG.STATUS_OPTIONS.map(s => (
                                         <option key={s} value={s}>{s}</option>
                                     ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-secondary)' }}>Lead Stage</label>
+                                <select
+                                    value={stage}
+                                    onChange={(e) => setStage(e.target.value)}
+                                    style={{ width: '100%', height: '40px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '13px' }}
+                                >
+                                    {CONFIG.STAGE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
                                 </select>
                             </div>
                             <div>

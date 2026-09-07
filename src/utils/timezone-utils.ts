@@ -90,6 +90,20 @@ const zonedLocalToUtc = (dateStr: string, timeStr?: string, timezoneStr?: string
     }
 };
 
+const getLocalDateTimeParts = (date: Date, timezoneStr?: string): { date: string; time: string } => {
+    const zone = getIanaTimezone(timezoneStr);
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: 'numeric', minute: '2-digit', hour12: true
+    }).formatToParts(date);
+    const values: Record<string, string> = {};
+    parts.forEach(part => { if (part.type !== 'literal') values[part.type] = part.value; });
+    return {
+        date: `${values.year}-${values.month}-${values.day}`,
+        time: `${values.hour}:${values.minute} ${values.dayPeriod || ''}`.trim()
+    };
+};
+
 const formatInTimezone = (date: Date, timezoneStr?: string): string => {
     const zone = getIanaTimezone(timezoneStr);
     return new Intl.DateTimeFormat('en-US', {
@@ -143,6 +157,10 @@ export const TimezoneUtils = {
         if (!callbackTime) return false;
         const timeDiff = Date.now() - callbackTime.getTime();
         return timeDiff >= 0 && timeDiff < 10 * 60 * 1000;
+    },
+
+    getLocalDateTimeParts: function(date: Date, timezoneStr?: string) {
+        return getLocalDateTimeParts(date, timezoneStr);
     },
 
     formatCallbackTime: function(appointment?: Partial<Appointment> | null): string {

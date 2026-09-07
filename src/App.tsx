@@ -497,7 +497,7 @@ export const App: React.FC = () => {
                 }}
                 onViewAppointment={(appt) => setSelectedAppt(appt)}
                 onMarkCompleted={async (appt) => {
-                    await FirestoreService.saveAppointment({ ...appt, status: 'Completed' });
+                    await FirestoreService.completeCallback(appt.id);
                 }}
             />
         </div>

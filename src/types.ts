@@ -10,6 +10,7 @@ export interface Appointment {
     time?: string;
     timezone?: string;
     status: string;
+    stage?: string;
     primaryStatus?: string;
     assigned?: string;
     closer?: string;
@@ -38,6 +39,8 @@ export interface Appointment {
     eventType?: string;
     callCount?: number;
     dateKey?: string;
+    parentAppointmentId?: string;
+    callbackCompletedAt?: string;
 }
 
 export interface Script {
