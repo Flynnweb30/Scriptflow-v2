@@ -192,6 +192,85 @@ body {
 .pulse { animation: pulse 2s ease-in-out infinite; }
 
 
+
+/* ============================================================
+   REAL-TIME CONNECTION INDICATOR
+   Lightweight, hoverable network health panel for live-call use.
+   ============================================================ */
+.connection-indicator {
+    position: relative;
+    width: 124px;
+    border: 1px solid rgba(30, 41, 59, 0.9);
+    border-radius: 9px;
+    background: rgba(8, 14, 30, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 8px 9px;
+    color: #cbd5e1;
+}
+.connection-indicator-main {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+.connection-indicator-icon {
+    height: 18px;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    flex-shrink: 0;
+}
+.connection-bar {
+    width: 4px;
+    min-height: 5px;
+    border-radius: 2px 2px 1px 1px;
+    background: #334155;
+    opacity: .65;
+    transition: background .2s ease, opacity .2s ease, box-shadow .2s ease;
+}
+.connection-indicator-good .connection-bar.filled { background: #22c55e; opacity: 1; box-shadow: 0 0 6px rgba(34,197,94,.28); }
+.connection-indicator-fair .connection-bar.filled { background: #eab308; opacity: 1; box-shadow: 0 0 6px rgba(234,179,8,.22); }
+.connection-indicator-poor .connection-bar.filled { background: #ef4444; opacity: 1; box-shadow: 0 0 6px rgba(239,68,68,.2); }
+.connection-indicator-lost .connection-bar { background: #ef4444; opacity: .35; }
+.connection-indicator-copy { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.connection-indicator-title { font-size: 10px; font-weight: 800; color: #e2e8f0; }
+.connection-indicator-status { font-size: 9px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.connection-metrics-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: 270px;
+    padding: 12px;
+    border: 1px solid #24314a;
+    border-radius: 11px;
+    background: rgba(9, 14, 26, 0.98);
+    box-shadow: 0 18px 40px rgba(0,0,0,.42);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+    z-index: 120;
+}
+.connection-indicator:hover .connection-metrics-popover,
+.connection-indicator:focus-within .connection-metrics-popover {
+    opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+}
+.connection-metrics-heading { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 11px; font-weight: 800; color: #f1f5f9; }
+.connection-metrics-state { font-size: 9px; color: #67e8f9; font-weight: 700; }
+.connection-metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.connection-metric { padding: 7px 8px; border: 1px solid rgba(51,65,85,.55); border-radius: 7px; background: rgba(15,23,42,.7); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.connection-metric span { font-size: 8px; color: #64748b; }
+.connection-metric strong { font-size: 10px; color: #e2e8f0; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.connection-metrics-footnote { margin-top: 9px; font-size: 8px; line-height: 1.35; color: #475569; }
+@media (max-width: 900px) {
+    .connection-metrics-popover { left: auto; right: 0; bottom: calc(100% + 8px); transform: translateY(4px); width: min(270px, calc(100vw - 34px)); }
+    .connection-indicator:hover .connection-metrics-popover, .connection-indicator:focus-within .connection-metrics-popover { transform: translateY(0); }
+}
+
 /* Fixed, transparent US timezone hero clock. It stays centered above the
    workspace without consuming sidebar space or covering interactive content. */
 .us-timezone-bar {
@@ -422,118 +501,8 @@ body.light-theme .us-timezone-bar {
     .activities-timezone-control select { max-width: none !important; width: 100%; }
 }
 
-/* ============================================================
-   REAL-TIME CONNECTION QUALITY
-   Positioned immediately above Tools & Settings. The trigger is
-   compact; the metrics remain hidden until hover/focus so the
-   sidebar keeps its existing density.
-   ============================================================ */
-.sidebar-connection-area {
-    padding: 8px 12px 7px;
-    border-top: 1px solid #0f1a2e;
-    position: relative;
-    z-index: 8;
-}
-.connection-status {
-    position: relative;
-    width: 100%;
-}
-.connection-status-trigger {
-    width: 100%;
-    min-height: 34px;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 7px 10px;
-    border: 1px solid rgba(51, 65, 85, .72);
-    border-radius: 9px;
-    background: rgba(15, 23, 42, .72);
-    color: #cbd5e1;
-    cursor: default;
-    text-align: left;
-    transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
-}
-.connection-status-trigger:hover,
-.connection-status-trigger:focus-visible {
-    background: rgba(20, 30, 50, .9);
-    border-color: rgba(100, 116, 139, .85);
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(56, 189, 248, .08);
-}
-.connection-signal {
-    height: 19px;
-    display: inline-flex;
-    align-items: flex-end;
-    gap: 2px;
-    flex-shrink: 0;
-}
-.connection-bar {
-    width: 4px;
-    min-height: 7px;
-    border-radius: 2px 2px 1px 1px;
-    background: #334155;
-    opacity: .45;
-    transition: background .2s ease, opacity .2s ease, box-shadow .2s ease;
-}
-.connection-status--4 .connection-bar.is-filled,
-.connection-status--3 .connection-bar.is-filled { background: #22c55e; opacity: 1; box-shadow: 0 0 7px rgba(34,197,94,.3); }
-.connection-status--2 .connection-bar.is-filled { background: #eab308; opacity: 1; box-shadow: 0 0 7px rgba(234,179,8,.25); }
-.connection-status--1 .connection-bar.is-filled,
-.connection-status--lost .connection-bar.is-filled { background: #ef4444; opacity: 1; box-shadow: 0 0 7px rgba(239,68,68,.3); }
-.connection-status-text { font-size: 11px; font-weight: 700; color: #94a3b8; }
-.connection-status--4 .connection-status-text,
-.connection-status--3 .connection-status-text { color: #86efac; }
-.connection-status--2 .connection-status-text { color: #fde047; }
-.connection-status--1 .connection-status-text,
-.connection-status--lost .connection-status-text { color: #fca5a5; }
-.connection-status-popover {
-    position: absolute;
-    left: calc(100% + 8px);
-    bottom: 0;
-    width: 300px;
-    padding: 12px;
-    border: 1px solid rgba(71, 85, 105, .72);
-    border-radius: 12px;
-    background: rgba(7, 13, 26, .97);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    box-shadow: 0 18px 45px rgba(0,0,0,.42);
-    color: #e2e8f0;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(4px);
-    pointer-events: none;
-    transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
-}
-.connection-status:hover .connection-status-popover,
-.connection-status:focus-within .connection-status-popover {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-.connection-popover-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-.connection-popover-title { font-size:12px; font-weight:800; }
-.connection-popover-state { font-size:10px; font-weight:800; }
-.connection-status--4 .connection-popover-state,
-.connection-status--3 .connection-popover-state { color:#4ade80; }
-.connection-status--2 .connection-popover-state { color:#facc15; }
-.connection-status--1 .connection-popover-state,
-.connection-status--lost .connection-popover-state { color:#f87171; }
-.connection-metrics-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
-.connection-metrics-grid > div { min-width:0; padding:7px 8px; border:1px solid rgba(51,65,85,.5); border-radius:8px; background:rgba(15,23,42,.68); }
-.connection-metrics-grid span { display:block; color:#64748b; font-size:9px; font-weight:700; margin-bottom:3px; }
-.connection-metrics-grid strong { display:block; color:#e2e8f0; font-size:11px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.connection-popover-note { margin-top:9px; color:#64748b; font-size:9px; line-height:1.35; }
-body.light-theme .connection-status-trigger { background:rgba(255,255,255,.72); border-color:rgba(148,163,184,.45); color:#334155; }
-body.light-theme .connection-status-popover { background:rgba(255,255,255,.97); border-color:rgba(148,163,184,.55); color:#0f172a; }
-body.light-theme .connection-metrics-grid > div { background:rgba(248,250,252,.9); border-color:rgba(148,163,184,.35); }
-body.light-theme .connection-metrics-grid strong { color:#0f172a; }
-@media (max-width: 1024px) {
-    .connection-status-popover { left: 0; bottom: calc(100% + 8px); }
-}
-@media (max-width: 420px) {
-    .connection-status-text { display:none; }
-    .connection-status-trigger { justify-content:center; }
-    .connection-status-popover { width:min(300px, calc(100vw - 32px)); }
+@media (max-width: 640px) {
+    .connection-indicator { width: 112px; padding: 7px 8px; }
+    .connection-indicator-title { font-size: 9px; }
+    .connection-indicator-status { font-size: 8px; }
 }

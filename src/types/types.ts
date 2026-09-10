@@ -24,6 +24,8 @@ export interface Appointment {
     callbackTime?: string | null;
     callbackPaused?: boolean;
     callbackKind?: string;
+    callbackOfAppointmentId?: string;
+    callbackSource?: 'meeting_reminder' | 'manual';
     followUpType?: string;
     durationMinutes?: number;
     gracePeriodMinutes?: number;

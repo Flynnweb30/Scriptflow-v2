@@ -120,7 +120,12 @@ export const TimezoneUtils = {
     },
 
     calculateCallbackTime: function(appointment?: Partial<Appointment> | null): Date | null {
-        if (!appointment || !appointment.date || !appointment.callbackSetting || appointment.callbackSetting === 'none') return null;
+        if (!appointment) return null;
+        if (appointment.callbackTime) {
+            const stored = new Date(String(appointment.callbackTime));
+            if (!Number.isNaN(stored.getTime())) return stored;
+        }
+        if (!appointment.date || !appointment.callbackSetting || appointment.callbackSetting === 'none') return null;
         const appointmentUTC = this.parseTimeWithTimezone(appointment.date, appointment.time, appointment.timezone || DEFAULT_TIMEZONE);
         if (!appointmentUTC) return null;
         let offsetMs = 0;

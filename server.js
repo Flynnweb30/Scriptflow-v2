@@ -39,6 +39,31 @@ app.use((req, res, next) => {
   next();
 });
 
+// Lightweight endpoints used by the in-app connection monitor. They intentionally
+// run before express.json() so the upload probe can measure raw request throughput.
+app.get('/api/network/ping', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.status(204).end();
+});
+
+app.get('/api/network/download', (req, res) => {
+  const requested = Number.parseInt(String(req.query.bytes || '262144'), 10);
+  const bytes = Math.min(Math.max(Number.isFinite(requested) ? requested : 262144, 16 * 1024), 512 * 1024);
+  const payload = Buffer.alloc(bytes);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Length', String(bytes));
+  res.end(payload);
+});
+
+app.post('/api/network/upload', express.raw({ type: 'application/octet-stream', limit: '512kb' }), (req, res) => {
+  const bytes = Buffer.isBuffer(req.body) ? req.body.length : 0;
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json({ receivedBytes: bytes });
+});
+
 app.use(express.json({ limit: '1mb' }));
 
 // Keep health before the SPA wildcard so /health returns JSON.

@@ -1,7 +1,7 @@
 export const CONFIG = {
     PRIMARY_STATUSES: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled'],
     SECONDARY_STATUSES: ['Meeting Booked', 'Rescheduled', 'Overdue', 'Held'],
-    STATUS_OPTIONS: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Rescheduled', 'Overdue', 'Held'],
+    STATUS_OPTIONS: ['New Lead', 'Attempted', 'Meeting Booked', 'Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Rescheduled', 'Overdue', 'Held', 'No Show', 'Quarantined'],
     STATUS_COLORS: {
         'New Lead': '#64748b',
         'Attempted': '#f59e0b',
@@ -14,7 +14,8 @@ export const CONFIG = {
         'Rescheduled': '#f97316',
         'Overdue': '#8b5cf6',
         'Held': '#06b6d4',
-        'No Show': '#ef4444'
+        'No Show': '#ef4444',
+        'Quarantined': '#f59e0b'
     } as Record<string, string>,
     TAG_OPTIONS: [
         { id: 'qualified_warm_call', name: 'Qualified Warm Call', color: '#10b981' },
@@ -72,7 +73,7 @@ export const SMART_IMPORT_CONFIG = {
         email: { pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
         time: { pattern: /^(0?[1-9]|1[0-2]):[0-5][0-9]\s*(AM|PM)$/i },
         date: { pattern: /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$|^\d{4}-\d{2}-\d{2}$|^[A-Za-z]+\s+\d{1,2},?\s+\d{4}$/ },
-        status: { allowed: ['Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Meeting Booked', 'Rescheduled', 'Overdue', 'Held'] }
+        status: { allowed: ['Hot Transfer', 'Warm Callback', 'Completed', 'Pending', 'Canceled', 'Meeting Booked', 'Rescheduled', 'Overdue', 'Held', 'No Show', 'Quarantined'] }
     },
     FIELD_ALIASES: {
         name: ['name', 'full name', 'contact name', 'client name', 'customer name', 'person name', 'first name', 'last name', 'contact', 'client', 'customer', 'person', 'prospect', 'lead name'],

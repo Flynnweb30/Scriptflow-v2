@@ -1,209 +1,271 @@
+export type ConnectionLevel = 0 | 1 | 2 | 3 | 4;
+
 export interface NetworkMetrics {
-  online: boolean;
-  signal: 0 | 1 | 2 | 3 | 4;
-  rttMs: number | null;
-  bandwidthMbps: number | null;
-  packetLossPercent: number;
-  jitterMs: number | null;
-  stabilityPercent: number | null;
-  reconnects: number;
-  samples: number;
-  failedSamples: number;
-  updatedAt: number;
+    level: ConnectionLevel;
+    status: 'excellent' | 'good' | 'fair' | 'poor' | 'lost' | 'testing';
+    latencyMs: number | null;
+    downloadMbps: number | null;
+    uploadMbps: number | null;
+    stabilityPercent: number | null;
+    jitterMs: number | null;
+    packetLossPercent: number | null;
+    reconnects: number;
+    online: boolean;
+    testingBandwidth: boolean;
+    lastUpdated: number;
 }
 
-type NetworkListener = (metrics: NetworkMetrics) => void;
+type Listener = (metrics: NetworkMetrics) => void;
 
-type NetworkInformationLike = EventTarget & {
-  downlink?: number;
-  rtt?: number;
-  effectiveType?: string;
-  addEventListener?: (type: string, listener: EventListenerOrEventListenerObject) => void;
-  removeEventListener?: (type: string, listener: EventListenerOrEventListenerObject) => void;
-};
+const PING_INTERVAL_MS = 15000;
+const DOWNLOAD_INTERVAL_MS = 60000;
+const UPLOAD_INTERVAL_MS = 120000;
+const PING_TIMEOUT_MS = 5000;
+const DOWNLOAD_BYTES = 256 * 1024;
+const UPLOAD_BYTES = 128 * 1024;
 
-const HEARTBEAT_INTERVAL_MS = 5000;
-const HISTORY_SIZE = 20;
-const HEARTBEAT_PATH = '/favicon.svg';
+const initialOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
 
-const getConnectionInfo = (): NetworkInformationLike | null => {
-  if (typeof navigator === 'undefined') return null;
-  return (navigator as Navigator & { connection?: NetworkInformationLike }).connection || null;
-};
-
-const round = (value: number, decimals = 1) => {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+const initialMetrics: NetworkMetrics = {
+    level: initialOnline ? 4 : 0,
+    status: initialOnline ? 'testing' : 'lost',
+    latencyMs: null,
+    downloadMbps: null,
+    uploadMbps: null,
+    stabilityPercent: null,
+    jitterMs: null,
+    packetLossPercent: initialOnline ? null : 100,
+    reconnects: 0,
+    online: initialOnline,
+    testingBandwidth: false,
+    lastUpdated: Date.now(),
 };
 
 class NetworkMonitor {
-  private listeners = new Set<NetworkListener>();
-  private timer: number | null = null;
-  private started = false;
-  private rttHistory: number[] = [];
-  private totalSamples = 0;
-  private failedSamples = 0;
-  private reconnects = 0;
-  private connectionLost = typeof navigator !== 'undefined' ? !navigator.onLine : false;
-  private metrics: NetworkMetrics = {
-    online: typeof navigator === 'undefined' ? true : navigator.onLine,
-    // Start at 4 when the browser reports a healthy connection. The signal is
-    // refined after the first heartbeat instead of visually starting at 1–3.
-    signal: typeof navigator === 'undefined' || navigator.onLine ? 4 : 0,
-    rttMs: null,
-    bandwidthMbps: null,
-    packetLossPercent: 0,
-    jitterMs: null,
-    stabilityPercent: null,
-    reconnects: 0,
-    samples: 0,
-    failedSamples: 0,
-    updatedAt: Date.now(),
-  };
+    private metrics: NetworkMetrics = initialMetrics;
+    private listeners = new Set<Listener>();
+    private started = false;
+    private pingTimer: number | null = null;
+    private downloadTimer: number | null = null;
+    private uploadTimer: number | null = null;
+    private pingInFlight = false;
+    private bandwidthInFlight = false;
+    private consecutiveFailures = 0;
+    private probeSuccesses = 0;
+    private probeFailures = 0;
+    private rttSamples: number[] = [];
+    private lastProbeFailure = false;
 
-  subscribe(listener: NetworkListener) {
-    this.listeners.add(listener);
-    this.start();
-    listener(this.metrics);
-    return () => this.listeners.delete(listener);
-  }
-
-  getSnapshot() {
-    return this.metrics;
-  }
-
-  private start() {
-    if (this.started || typeof window === 'undefined') return;
-    this.started = true;
-
-    window.addEventListener('online', this.handleOnline);
-    window.addEventListener('offline', this.handleOffline);
-
-    const connection = getConnectionInfo();
-    connection?.addEventListener?.('change', this.handleConnectionChange);
-
-    void this.sample();
-    this.timer = window.setInterval(() => void this.sample(), HEARTBEAT_INTERVAL_MS);
-  }
-
-  private handleOnline = () => {
-    if (this.connectionLost) this.reconnects += 1;
-    this.connectionLost = false;
-    this.update({ online: true, signal: 4, reconnects: this.reconnects });
-    void this.sample();
-  };
-
-  private handleOffline = () => {
-    if (!this.connectionLost) this.connectionLost = true;
-    this.update({ online: false, signal: 0 });
-  };
-
-  private handleConnectionChange = () => {
-    const connection = getConnectionInfo();
-    this.update({ bandwidthMbps: this.getBandwidth(connection) });
-  };
-
-  private getBandwidth(connection = getConnectionInfo()) {
-    const downlink = connection?.downlink;
-    return typeof downlink === 'number' && Number.isFinite(downlink) && downlink >= 0 ? round(downlink, 2) : null;
-  }
-
-  private calculateJitter() {
-    if (this.rttHistory.length < 2) return null;
-    let deltaSum = 0;
-    for (let i = 1; i < this.rttHistory.length; i += 1) {
-      deltaSum += Math.abs(this.rttHistory[i] - this.rttHistory[i - 1]);
+    subscribe(listener: Listener): () => void {
+        this.listeners.add(listener);
+        listener(this.metrics);
+        this.start();
+        return () => {
+            this.listeners.delete(listener);
+            if (this.listeners.size === 0) this.stop();
+        };
     }
-    return round(deltaSum / (this.rttHistory.length - 1), 1);
-  }
 
-  private calculateStability(loss: number, jitterMs: number | null) {
-    if (this.totalSamples === 0) return null;
-    const lossPenalty = Math.min(100, loss * 3);
-    const jitterPenalty = jitterMs === null ? 0 : Math.min(40, jitterMs / 2);
-    return round(Math.max(0, 100 - lossPenalty - jitterPenalty), 1);
-  }
+    getSnapshot(): NetworkMetrics {
+        return this.metrics;
+    }
 
-  private calculateSignal(online: boolean, rttMs: number | null, bandwidthMbps: number | null, loss: number) {
-    if (!online) return 0 as const;
-    // Unknown metrics are treated as healthy until measurements prove otherwise.
-    let score = 4;
-    if (loss >= 10 || (rttMs !== null && rttMs > 300) || (bandwidthMbps !== null && bandwidthMbps < 1)) score = 1;
-    else if (loss >= 5 || (rttMs !== null && rttMs > 150) || (bandwidthMbps !== null && bandwidthMbps < 3)) score = 2;
-    else if (loss >= 2 || (rttMs !== null && rttMs > 80) || (bandwidthMbps !== null && bandwidthMbps < 10)) score = 3;
-    return score as 1 | 2 | 3 | 4;
-  }
+    private start(): void {
+        if (this.started) return;
+        this.started = true;
+        window.addEventListener('online', this.handleOnline);
+        window.addEventListener('offline', this.handleOffline);
+        void this.runPing();
+        this.pingTimer = window.setInterval(() => void this.runPing(), PING_INTERVAL_MS);
+        this.downloadTimer = window.setInterval(() => void this.runBandwidthTest('download'), DOWNLOAD_INTERVAL_MS);
+        this.uploadTimer = window.setInterval(() => void this.runBandwidthTest('upload'), UPLOAD_INTERVAL_MS);
+        window.setTimeout(() => void this.runBandwidthTest('download'), 2500);
+        window.setTimeout(() => void this.runBandwidthTest('upload'), 7000);
+    }
 
-  private update(partial: Partial<NetworkMetrics>) {
-    const packetLossPercent = this.totalSamples ? round((this.failedSamples / this.totalSamples) * 100, 1) : 0;
-    const jitterMs = partial.jitterMs ?? this.metrics.jitterMs;
-    this.metrics = {
-      ...this.metrics,
-      ...partial,
-      packetLossPercent,
-      jitterMs,
-      stabilityPercent: this.calculateStability(packetLossPercent, jitterMs),
-      reconnects: this.reconnects,
-      samples: this.totalSamples,
-      failedSamples: this.failedSamples,
-      updatedAt: Date.now(),
+    private stop(): void {
+        if (!this.started) return;
+        this.started = false;
+        window.removeEventListener('online', this.handleOnline);
+        window.removeEventListener('offline', this.handleOffline);
+        if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
+        if (this.downloadTimer !== null) window.clearInterval(this.downloadTimer);
+        if (this.uploadTimer !== null) window.clearInterval(this.uploadTimer);
+        this.pingTimer = null;
+        this.downloadTimer = null;
+        this.uploadTimer = null;
+    }
+
+    private handleOnline = (): void => {
+        this.consecutiveFailures = 0;
+        this.setMetrics({
+            online: true,
+            level: 4,
+            status: 'testing',
+            packetLossPercent: null,
+        });
+        void this.runPing();
     };
-    this.listeners.forEach((listener) => listener(this.metrics));
-  }
 
-  private async sample() {
-    const startedAt = performance.now();
-    const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+    private handleOffline = (): void => {
+        if (this.metrics.online || this.metrics.level > 0) {
+            this.metrics.reconnects += 1;
+        }
+        this.consecutiveFailures = 0;
+        this.setMetrics({
+            online: false,
+            level: 0,
+            status: 'lost',
+            latencyMs: null,
+            jitterMs: null,
+            packetLossPercent: 100,
+            stabilityPercent: this.calculateStability(),
+            testingBandwidth: false,
+        });
+    };
 
-    if (!online) {
-      this.connectionLost = true;
-      this.update({ online: false, signal: 0 });
-      return;
+    private async runPing(): Promise<void> {
+        if (this.pingInFlight || !navigator.onLine) return;
+        this.pingInFlight = true;
+        const startedAt = performance.now();
+        try {
+            const controller = new AbortController();
+            const timeout = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS);
+            const response = await fetch(`/api/network/ping?t=${Date.now()}`, {
+                method: 'GET',
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache' },
+                signal: controller.signal,
+            });
+            window.clearTimeout(timeout);
+            if (!response.ok) throw new Error(`Ping failed: ${response.status}`);
+            const rtt = Math.max(0.1, performance.now() - startedAt);
+            this.probeSuccesses += 1;
+            this.consecutiveFailures = 0;
+            this.rttSamples = [...this.rttSamples.slice(-9), rtt];
+            const jitter = this.calculateJitter();
+            const packetLoss = this.calculatePacketLoss();
+            const recovered = this.lastProbeFailure;
+            this.lastProbeFailure = false;
+            if (recovered) this.metrics.reconnects += 1;
+            this.setMetrics({
+                online: true,
+                latencyMs: Math.round(rtt),
+                jitterMs: jitter === null ? null : Math.round(jitter),
+                packetLossPercent: packetLoss,
+                stabilityPercent: this.calculateStability(),
+                reconnects: this.metrics.reconnects,
+            });
+        } catch {
+            this.probeFailures += 1;
+            this.consecutiveFailures += 1;
+            this.lastProbeFailure = true;
+            const packetLoss = this.calculatePacketLoss();
+            const lost = !navigator.onLine || this.consecutiveFailures >= 3;
+            this.setMetrics({
+                online: !lost,
+                level: lost ? 0 : Math.min(this.metrics.level, 1) as ConnectionLevel,
+                status: lost ? 'lost' : 'poor',
+                latencyMs: null,
+                jitterMs: this.calculateJitter(),
+                packetLossPercent: packetLoss,
+                stabilityPercent: this.calculateStability(),
+            });
+        } finally {
+            this.pingInFlight = false;
+        }
     }
 
-    try {
-      const url = `${HEARTBEAT_PATH}?sf_net=${Date.now()}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        cache: 'no-store',
-        credentials: 'same-origin',
-        headers: { 'Cache-Control': 'no-cache' },
-      });
-      if (!response.ok) throw new Error(`Heartbeat ${response.status}`);
-      await response.body?.cancel();
-
-      const rttMs = Math.max(1, Math.round(performance.now() - startedAt));
-      this.totalSamples += 1;
-      this.rttHistory.push(rttMs);
-      if (this.rttHistory.length > HISTORY_SIZE) this.rttHistory.shift();
-
-      if (this.connectionLost) this.reconnects += 1;
-      this.connectionLost = false;
-
-      const bandwidthMbps = this.getBandwidth();
-      const packetLossPercent = this.totalSamples ? (this.failedSamples / this.totalSamples) * 100 : 0;
-      const jitterMs = this.calculateJitter();
-      this.update({
-        online: true,
-        rttMs,
-        bandwidthMbps,
-        jitterMs,
-        stabilityPercent: this.calculateStability(packetLossPercent, jitterMs),
-        signal: this.calculateSignal(true, rttMs, bandwidthMbps, packetLossPercent),
-      });
-    } catch {
-      this.totalSamples += 1;
-      this.failedSamples += 1;
-      this.connectionLost = true;
-      const bandwidthMbps = this.getBandwidth();
-      const packetLossPercent = (this.failedSamples / this.totalSamples) * 100;
-      this.update({
-        online: navigator.onLine,
-        bandwidthMbps,
-        signal: this.calculateSignal(navigator.onLine, this.metrics.rttMs, bandwidthMbps, packetLossPercent),
-      });
+    private async runBandwidthTest(direction: 'download' | 'upload'): Promise<void> {
+        if (this.bandwidthInFlight || !navigator.onLine) return;
+        this.bandwidthInFlight = true;
+        this.setMetrics({ testingBandwidth: true });
+        try {
+            if (direction === 'download') {
+                const startedAt = performance.now();
+                const response = await fetch(`/api/network/download?bytes=${DOWNLOAD_BYTES}&t=${Date.now()}`, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' },
+                });
+                if (!response.ok) throw new Error(`Download test failed: ${response.status}`);
+                const data = await response.arrayBuffer();
+                const durationSeconds = Math.max((performance.now() - startedAt) / 1000, 0.001);
+                const mbps = (data.byteLength * 8) / durationSeconds / 1_000_000;
+                this.setMetrics({ downloadMbps: Math.round(mbps * 10) / 10 });
+            } else {
+                const payload = new Uint8Array(UPLOAD_BYTES);
+                const startedAt = performance.now();
+                const response = await fetch(`/api/network/upload?t=${Date.now()}`, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-cache' },
+                    body: payload,
+                });
+                if (!response.ok) throw new Error(`Upload test failed: ${response.status}`);
+                await response.arrayBuffer();
+                const durationSeconds = Math.max((performance.now() - startedAt) / 1000, 0.001);
+                const mbps = (payload.byteLength * 8) / durationSeconds / 1_000_000;
+                this.setMetrics({ uploadMbps: Math.round(mbps * 10) / 10 });
+            }
+        } catch {
+            this.setMetrics({});
+        } finally {
+            this.bandwidthInFlight = false;
+            this.setMetrics({ testingBandwidth: false });
+        }
     }
-  }
+
+    private calculateJitter(): number | null {
+        if (this.rttSamples.length < 2) return null;
+        const differences = this.rttSamples.slice(1).map((value, index) => Math.abs(value - this.rttSamples[index]));
+        return differences.reduce((sum, value) => sum + value, 0) / differences.length;
+    }
+
+    private calculatePacketLoss(): number {
+        const total = this.probeSuccesses + this.probeFailures;
+        if (!total) return 0;
+        return Math.round((this.probeFailures / total) * 1000) / 10;
+    }
+
+    private calculateStability(): number {
+        const total = this.probeSuccesses + this.probeFailures;
+        if (!total) return 100;
+        return Math.round((this.probeSuccesses / total) * 1000) / 10;
+    }
+
+    private deriveLevel(metrics: NetworkMetrics): ConnectionLevel {
+        if (!metrics.online) return 0;
+        if (metrics.latencyMs === null || metrics.packetLossPercent === null) return 4;
+        const bandwidthReady = metrics.downloadMbps !== null && metrics.uploadMbps !== null;
+        const download = metrics.downloadMbps ?? Number.POSITIVE_INFINITY;
+        const upload = metrics.uploadMbps ?? Number.POSITIVE_INFINITY;
+        const jitter = metrics.jitterMs ?? 0;
+        const loss = metrics.packetLossPercent;
+        if (metrics.latencyMs <= 100 && jitter <= 20 && loss <= 1 && (!bandwidthReady || (download >= 5 && upload >= 1))) return 4;
+        if (metrics.latencyMs <= 200 && jitter <= 40 && loss <= 3 && (!bandwidthReady || (download >= 2 && upload >= 0.5))) return 3;
+        if (metrics.latencyMs <= 350 && jitter <= 80 && loss <= 7 && (!bandwidthReady || (download >= 1 && upload >= 0.25))) return 2;
+        return 1;
+    }
+
+    private deriveStatus(level: ConnectionLevel): NetworkMetrics['status'] {
+        if (level === 0) return 'lost';
+        if (level === 1) return 'poor';
+        if (level === 2) return 'fair';
+        if (level === 3) return 'good';
+        return 'excellent';
+    }
+
+    private setMetrics(patch: Partial<NetworkMetrics>): void {
+        const next = { ...this.metrics, ...patch, lastUpdated: Date.now() };
+        if (patch.level === undefined && patch.status === undefined && next.status !== 'testing') {
+            const level = this.deriveLevel(next);
+            next.level = level;
+            next.status = this.deriveStatus(level);
+        }
+        this.metrics = next;
+        this.listeners.forEach(listener => listener(this.metrics));
+    }
 }
 
 export const networkMonitor = new NetworkMonitor();

@@ -1,35 +1,29 @@
-# ScriptFlow Pro v2.8 — Closer + US Timezone Audit
+# ScriptFlow Pro — Activities / Callback / Status Audit
 
 ## Scope
-Targeted repair and full source-level audit of Closer Management, Calling Scripts, Activities/Calendar/List integration, user-specific Firestore synchronization, and global US timezone presentation.
+Targeted audit of Activities List/Calendar, Meeting/Callback/Follow-up filters, callback reminder workflow, status/tag synchronization, Appointment Detail Modal, and shared Firestore appointment persistence.
 
-## Repairs
-- Added a fixed, transparent, responsive top-center US timezone hero bar with live second-by-second clocks for EDT/CDT/MDT/PDT and an exact local clock.
-- Reserved vertical workspace space so the fixed timezone bar does not cover the TopBar or content.
-- Preserved dark/light theme compatibility for the timezone bar.
-- Closer default selection now performs a fresh user-owned Firestore read before writes, reducing stale-cache/default races.
-- Enforced exactly one active default closer when a default is selected, deactivated, or removed.
-- Prevented inactive closers from being offered as Make Default actions.
-- Editing an inactive closer cannot accidentally retain a default flag.
-- Closer rename continues to synchronize appointment closer names using the existing batch workflow.
-- Calling Script reorder persists both `order` and `keyNumber`, so visible shortcut numbers follow the new position.
-- Existing per-user Firestore listeners and optimistic rollback behavior were preserved.
+## Implemented
+- Meeting dropdown with All / Initial / Follow-up and status checkboxes.
+- Held and Completed are treated as one completed status group for filtering/counting.
+- All Statuses control is synchronized with the same status filter state used by List and Calendar.
+- All configured appointment tags are available to the shared tag filter.
+- Appointment Detail Modal now supports all configured status tags.
+- Meeting reminders create a deterministic linked callback record (`<meetingId>__callback`) in the same user workspace.
+- Callback records remain visible until marked Completed; completed callbacks are excluded from the default List To-do view and render green in Calendar.
+- Parent meeting edits synchronize callback contact, closer, owner, timezone, and due instant.
+- Removing a meeting reminder removes its linked callback; deleting a meeting removes its linked callback.
+- User ownership is preserved on both parent and callback records.
 
-## Validation
-- `node --check server.js`: PASS
-- package.json JSON parse: PASS
-- package-lock.json JSON parse: PASS
-- Top-level Vite dependency duplication: PASS (Vite only in devDependencies)
-- User-scoped Firestore query/write assertions: PASS
-- Closer fresh-read/default logic assertions: PASS
-- Calling Script order/number assertions: PASS
-- Global timezone bar assertions: PASS
-- US clock conversion sanity check for 2026-09-02T06:11:00Z:
-  - EDT: 2:11:00 AM EDT
-  - CDT: 1:11:00 AM CDT
-  - MDT: 12:11:00 AM MDT
-  - PDT: 11:11:00 PM PDT
-- ZIP integrity: PASS
+## Verification
+- Static source assertions: PASS
+- Server JavaScript syntax: PASS
+- US timezone Intl sanity test: PASS
+- No duplicate Firebase initialization detected: PASS
+- Appointment callback link fields present in both type definitions: PASS
+- Held/Completed grouped filtering: PASS
+- Generic tag filtering: PASS
+- Callback atomic batch persistence path: PASS
 
-## Production build limitation
-A full network-backed `npm ci` could not complete in the execution environment because the npm registry operation timed out. The package lock and source-level checks passed, but the final production build must be executed by the deployment environment (Render) with registry access.
+## Environment limitation
+A full network-backed `npm ci` / production Vite build could not be completed in this sandbox because package installation timed out. Render should run the final `npm ci && npm run build` using its network-enabled build environment.

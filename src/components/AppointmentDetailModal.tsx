@@ -67,10 +67,14 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
     };
 
     const handleDelete = async () => {
-        if (confirm(`Delete appointment for "${appointment.business}"?`)) {
+        if (!confirm(`Delete appointment for "${appointment.business}"?`)) return;
+        try {
             await FirestoreService.deleteAppointment(appointment.id);
             onDelete(appointment.id);
             onClose();
+        } catch (error: any) {
+            console.error('Appointment delete failed:', error);
+            alert(error?.message || 'Unable to delete this appointment. Please try again.');
         }
     };
 
@@ -283,31 +287,27 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                         ))}
                                     </select>
                                 </div>
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    minHeight: '40px',
-                                    padding: '8px 12px',
-                                    borderRadius: '10px',
-                                    border: '1px solid rgba(239, 68, 68, 0.25)',
-                                    background: 'rgba(239, 68, 68, 0.05)'
-                                }}>
-                                    <label htmlFor="appt-no-show-tag" style={{ display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer', width: '100%' }}>
-                                        <input
-                                            id="appt-no-show-tag"
-                                            type="checkbox"
-                                            checked={Utils.hasTag(formData, 'no_show')}
-                                            onChange={(e) => {
-                                                const existingTags = Array.isArray(formData.tags) ? formData.tags.filter(tag => tag !== 'no_show') : [];
-                                                setFormData({ ...formData, tags: e.target.checked ? [...existingTags, 'no_show'] : existingTags });
-                                            }}
-                                            style={{ width: '16px', height: '16px', accentColor: '#ef4444', cursor: 'pointer', flexShrink: 0 }}
-                                        />
-                                        <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc' }}>No-Show tag</span>
-                                            <span style={{ fontSize: '10px', color: '#64748b' }}>Included in analytics and list filtering</span>
-                                        </span>
-                                    </label>
+                                <div style={{ gridColumn: '1 / -1', padding: '10px 12px', borderRadius: '10px', border: '1px solid #1e293b', background: '#090e1a' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', marginBottom: '8px' }}>STATUS TAGS</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {CONFIG.TAG_OPTIONS.map(tag => {
+                                            const selected = Utils.hasTag(formData, tag.id);
+                                            return (
+                                                <button
+                                                    key={tag.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const currentTags = Array.isArray(formData.tags) ? formData.tags : [];
+                                                        const nextTags = selected ? currentTags.filter(value => value !== tag.id) : [...currentTags, tag.id];
+                                                        setFormData({ ...formData, tags: nextTags });
+                                                    }}
+                                                    style={{ padding: '5px 9px', borderRadius: '999px', border: `1px solid ${selected ? tag.color : '#2a3852'}`, background: selected ? `${tag.color}1f` : '#0d1527', color: selected ? tag.color : '#94a3b8', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                                                >
+                                                    {tag.name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Callback Reminder</label>
@@ -343,6 +343,7 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                 <span style={{ padding: '6px 14px', borderRadius: '20px', background: '#131d33', border: '1px solid #1e293b', color: '#e2e8f0', fontSize: '12px', fontWeight: 700 }}>
                                     👤 Closer: {formData.closer || 'Unassigned'}
                                 </span>
+                                {(Array.isArray(formData.tags) ? formData.tags : []).map(tagId => { const tag = Utils.getTagDefinition(tagId); return <span key={tagId} style={{ padding: '5px 10px', borderRadius: '999px', background: `${tag.color}18`, border: `1px solid ${tag.color}55`, color: tag.color, fontSize: '10px', fontWeight: 800 }}>{tag.name}</span>; })}
                                 {formData.role && (
                                     <span style={{ padding: '6px 14px', borderRadius: '20px', background: '#131d33', border: '1px solid #1e293b', color: '#94a3b8', fontSize: '12px' }}>
                                         💼 {formData.role}
