@@ -24,8 +24,6 @@ export interface Appointment {
     callbackTime?: string | null;
     callbackPaused?: boolean;
     callbackKind?: string;
-    parentAppointmentId?: string;
-    callbackCompleted?: boolean;
     followUpType?: string;
     durationMinutes?: number;
     gracePeriodMinutes?: number;

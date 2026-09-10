@@ -90,37 +90,6 @@ const zonedLocalToUtc = (dateStr: string, timeStr?: string, timezoneStr?: string
     }
 };
 
-const getZonedParts = (date: Date, timezoneStr?: string) => {
-    const zone = getIanaTimezone(timezoneStr);
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false
-    }).formatToParts(date);
-    const values: Record<string, string> = {};
-    parts.forEach(part => { if (part.type !== 'literal') values[part.type] = part.value; });
-    let hour = Number(values.hour || 0);
-    if (hour === 24) hour = 0;
-    return {
-        year: Number(values.year),
-        month: Number(values.month),
-        day: Number(values.day),
-        hour,
-        minute: Number(values.minute || 0)
-    };
-};
-
-export const getAppointmentCallbackDateTime = (appointment?: Partial<Appointment> | null): { date: string; time: string; instant: Date } | null => {
-    const callback = TimezoneUtils.calculateCallbackTime(appointment);
-    if (!callback) return null;
-    const timezone = appointment?.timezone || DEFAULT_TIMEZONE;
-    const parts = getZonedParts(callback, timezone);
-    const date = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
-    const time = new Intl.DateTimeFormat('en-US', {
-        timeZone: getIanaTimezone(timezone), hour: 'numeric', minute: '2-digit', hour12: true
-    }).format(callback);
-    return { date, time, instant: callback };
-};
-
 const formatInTimezone = (date: Date, timezoneStr?: string): string => {
     const zone = getIanaTimezone(timezoneStr);
     return new Intl.DateTimeFormat('en-US', {
@@ -151,13 +120,7 @@ export const TimezoneUtils = {
     },
 
     calculateCallbackTime: function(appointment?: Partial<Appointment> | null): Date | null {
-        if (!appointment) return null;
-        const activityType = String(appointment.appointmentType || appointment.eventType || '').toLowerCase();
-        if (activityType.includes('callback') && appointment.callbackTime) {
-            const stored = new Date(appointment.callbackTime);
-            return Number.isNaN(stored.getTime()) ? null : stored;
-        }
-        if (!appointment.date || !appointment.callbackSetting || appointment.callbackSetting === 'none') return null;
+        if (!appointment || !appointment.date || !appointment.callbackSetting || appointment.callbackSetting === 'none') return null;
         const appointmentUTC = this.parseTimeWithTimezone(appointment.date, appointment.time, appointment.timezone || DEFAULT_TIMEZONE);
         if (!appointmentUTC) return null;
         let offsetMs = 0;
@@ -175,12 +138,9 @@ export const TimezoneUtils = {
     },
 
     isCallbackDue: function(appointment?: Partial<Appointment> | null): boolean {
-        if (!appointment || appointment.callbackPaused || appointment.callbackTriggered || appointment.callbackCompleted) return false;
-        const isCallbackActivity = String(appointment.appointmentType || appointment.eventType || '').toLowerCase().includes('callback');
-        const callbackTime = isCallbackActivity && appointment.callbackTime
-            ? new Date(appointment.callbackTime)
-            : this.calculateCallbackTime(appointment);
-        if (!callbackTime || Number.isNaN(callbackTime.getTime())) return false;
+        if (!appointment || !appointment.callbackSetting || appointment.callbackSetting === 'none' || appointment.callbackTriggered || appointment.callbackPaused) return false;
+        const callbackTime = this.calculateCallbackTime(appointment);
+        if (!callbackTime) return false;
         const timeDiff = Date.now() - callbackTime.getTime();
         return timeDiff >= 0 && timeDiff < 10 * 60 * 1000;
     },

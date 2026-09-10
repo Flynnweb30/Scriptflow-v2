@@ -283,21 +283,31 @@ export const AppointmentDetailModal: React.FC<AppointmentDetailModalProps> = ({
                                         ))}
                                     </select>
                                 </div>
-                                <div style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #1e293b', background: '#090e1a' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#94a3b8', marginBottom: '8px' }}>Status Tags</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '7px' }}>
-                                        {CONFIG.TAG_OPTIONS.map(tag => {
-                                            const checked = Utils.hasTag(formData, tag.id);
-                                            return <label key={tag.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '7px 8px', borderRadius: '7px', border: `1px solid ${checked ? tag.color : '#263247'}`, background: checked ? `${tag.color}12` : 'transparent', cursor: 'pointer' }}>
-                                                <input type="checkbox" checked={checked} onChange={(e) => {
-                                                    const currentTags = Array.isArray(formData.tags) ? formData.tags.filter(existing => existing !== tag.id) : [];
-                                                    setFormData({ ...formData, tags: e.target.checked ? [...currentTags, tag.id] : currentTags });
-                                                }} style={{ accentColor: tag.color }} />
-                                                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: tag.color }}></span>
-                                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0' }}>{tag.name}</span>
-                                            </label>;
-                                        })}
-                                    </div>
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    minHeight: '40px',
+                                    padding: '8px 12px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                    background: 'rgba(239, 68, 68, 0.05)'
+                                }}>
+                                    <label htmlFor="appt-no-show-tag" style={{ display: 'flex', alignItems: 'center', gap: '9px', cursor: 'pointer', width: '100%' }}>
+                                        <input
+                                            id="appt-no-show-tag"
+                                            type="checkbox"
+                                            checked={Utils.hasTag(formData, 'no_show')}
+                                            onChange={(e) => {
+                                                const existingTags = Array.isArray(formData.tags) ? formData.tags.filter(tag => tag !== 'no_show') : [];
+                                                setFormData({ ...formData, tags: e.target.checked ? [...existingTags, 'no_show'] : existingTags });
+                                            }}
+                                            style={{ width: '16px', height: '16px', accentColor: '#ef4444', cursor: 'pointer', flexShrink: 0 }}
+                                        />
+                                        <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc' }}>No-Show tag</span>
+                                            <span style={{ fontSize: '10px', color: '#64748b' }}>Included in analytics and list filtering</span>
+                                        </span>
+                                    </label>
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#94a3b8' }}>Callback Reminder</label>

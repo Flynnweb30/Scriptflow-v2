@@ -33,12 +33,3 @@ Targeted repair and full source-level audit of Closer Management, Calling Script
 
 ## Production build limitation
 A full network-backed `npm ci` could not complete in the execution environment because the npm registry operation timed out. The package lock and source-level checks passed, but the final production build must be executed by the deployment environment (Render) with registry access.
-
-## Latest Activities/Callback audit
-- Meeting dropdown: Initial/Follow-up/All plus status checkboxes added.
-- Completed/Held status filtering is treated as one logical completed state.
-- Callback reminders are represented as derived callback activities from the canonical appointment, avoiding duplicate Firestore records.
-- Callback completion is persisted separately from meeting completion.
-- Completed callbacks are hidden from List View and remain green in Calendar View.
-- All configured status tags are available in the Activities filter and editable in Appointment Detail.
-- Callback lifecycle resets automatically when the underlying appointment schedule/reminder configuration changes.

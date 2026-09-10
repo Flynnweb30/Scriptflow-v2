@@ -116,12 +116,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [assignedFilter, setAssignedFilter] = useState<string>('all');
     const [tagFilter, setTagFilter] = useState<string>('all');
-    const [stageFilter, setStageFilter] = useState<string>('all');
-    const [activityMenuOpen, setActivityMenuOpen] = useState<'meeting' | 'callback' | 'followup' | null>(null);
-    const [meetingSubtype, setMeetingSubtype] = useState<'all' | 'initial' | 'followup'>('all');
-    const [meetingStatusFilters, setMeetingStatusFilters] = useState<string[]>([]);
-    const [callbackSubtype, setCallbackSubtype] = useState('all');
-    const [followupSubtype, setFollowupSubtype] = useState('all');
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [draggedApptId, setDraggedApptId] = useState<string | null>(null);
     const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
@@ -180,29 +174,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     // Shared appointment filter used by every calendar/list mode.
     const filteredAppointments = useMemo(() => {
         return appointments.filter(appt => {
-            const kind = getActivityKind(appt);
             const matchesStatus = statusFilter === 'all' || appt.status === statusFilter;
             const matchesAssigned = assignedFilter === 'all' || appt.assigned === assignedFilter || appt.closer === assignedFilter;
-            const matchesTag = tagFilter === 'all' || (tagFilter === 'no_show' && Utils.hasTag(appt, 'no_show')) || Utils.hasTag(appt, tagFilter);
-            const matchesStage = stageFilter === 'all' || PIPELINE_STAGES.find(stage => stage.id === stageFilter)?.matchStatuses.includes(appt.status || 'Pending');
-            const matchesType = activityTypeFilter === 'all' || kind === activityTypeFilter;
-            const meetingStatusMatch = meetingStatusFilters.length === 0 || meetingStatusFilters.some(filter => {
-                if (filter === 'Scheduled') return ['Meeting Booked', 'Scheduled'].includes(appt.status || '');
-                if (filter === 'Completed') return ['Completed', 'Held'].includes(appt.status || '');
-                if (filter === 'Cancelled') return ['Canceled', 'Cancelled'].includes(appt.status || '');
-                if (filter === 'Quarantined') return Utils.hasTag(appt, 'quarantined');
-                return appt.status === filter;
-            });
-            const matchesMeetingSubtype = kind !== 'meeting' || meetingSubtype === 'all' || (meetingSubtype === 'initial' ? !appt.followUpType : Boolean(appt.followUpType));
-            const matchesCallbackSubtype = kind !== 'callback' || callbackSubtype === 'all' || (appt.callbackKind || 'Callback') === callbackSubtype;
-            const matchesFollowupSubtype = kind !== 'followup' || followupSubtype === 'all' || (appt.followUpType || 'Follow-up') === followupSubtype;
+            const matchesTag = tagFilter === 'all' || (tagFilter === 'no_show' && Utils.hasTag(appt, 'no_show'));
+            const matchesType = activityTypeFilter === 'all' || getActivityKind(appt) === activityTypeFilter;
             const matchesTimezone = timezoneFilter === 'all' || normalizeUSTimezone(appt.timezone) === timezoneFilter;
             const query = searchTerm.trim().toLowerCase();
             const matchesSearch = !query || [appt.business, appt.contactName, appt.phone, appt.email, appt.notes]
                 .some(value => String(value || '').toLowerCase().includes(query));
-            return matchesStatus && matchesAssigned && matchesTag && matchesStage && matchesType && meetingStatusMatch && matchesMeetingSubtype && matchesCallbackSubtype && matchesFollowupSubtype && matchesTimezone && matchesSearch;
+            return matchesStatus && matchesAssigned && matchesTag && matchesType && matchesTimezone && matchesSearch;
         });
-    }, [appointments, statusFilter, assignedFilter, tagFilter, stageFilter, activityTypeFilter, meetingSubtype, meetingStatusFilters, callbackSubtype, followupSubtype, timezoneFilter, searchTerm, getActivityKind]);
+    }, [appointments, statusFilter, assignedFilter, tagFilter, activityTypeFilter, timezoneFilter, searchTerm, getActivityKind]);
 
     const listFilteredAppointments = useMemo(() => {
         if (viewMode !== 'list') return filteredAppointments;
@@ -220,11 +202,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         return filteredAppointments.filter((appt) => {
             const apptDate = dateOnly(appt.date);
             const completed = ['Completed', 'Held', 'Canceled', 'No Show'].includes(appt.status || '') || Utils.isNoShow(appt);
-            const kind = getActivityKind(appt);
             const overdue = Boolean(apptDate && apptDate < today && !completed);
-            // Completed callbacks are terminal activity records and stay hidden
-            // from the work queue even when the user enables completed items.
-            if (kind === 'callback' && completed) return false;
             if (!includeCompleted && completed) return false;
             const matchesPreset = listPreset === 'todo' ? !completed : listPreset === 'overdue' ? overdue : (!start || apptDate >= start) && (!end || apptDate <= end);
             if (!matchesPreset) return false;
@@ -799,16 +777,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     ))}
                 </select>
 
-                <select
-                    value={stageFilter}
-                    onChange={(e) => setStageFilter(e.target.value)}
-                    aria-label="Pipeline stage"
-                    style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px', outline: 'none' }}
-                >
-                    <option value="all">All stages</option>
-                    {PIPELINE_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.title}</option>)}
-                </select>
-
                 <select 
                     value={assignedFilter}
                     onChange={(e) => setAssignedFilter(e.target.value)}
@@ -869,7 +837,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     }}
                 >
                     <option value="all">All Tags</option>
-                    {CONFIG.TAG_OPTIONS.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                    <option value="no_show">No-Show</option>
                 </select>
 
                 <span style={{ 
@@ -1107,54 +1075,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} aria-label="Custom end date" min={customStart || undefined} style={{ height: '32px', padding: '0 9px', borderRadius: '7px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px' }} />
                         </div>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                        <button onClick={() => { setActivityTypeFilter('all'); setActivitySubtypeFilter('all'); setActivityMenuOpen(null); }} aria-pressed={activityTypeFilter === 'all'} style={{ padding: '8px 12px', borderRadius: '9px', border: '1px solid #2a3852', background: activityTypeFilter === 'all' ? '#18243b' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>All</button>
-                        {([
-                            ['meeting', 'Meetings', '#8b9cff'],
-                            ['callback', 'Callbacks', '#fbbf24'],
-                            ['followup', 'Follow-ups', '#34d399']
-                        ] as const).map(([value, label, dot]) => {
-                            const open = activityMenuOpen === value;
-                            const active = activityTypeFilter === value;
-                            return (
-                                <div key={value} style={{ position: 'relative', display: 'inline-flex' }}>
-                                    <button onClick={() => { setActivityTypeFilter(active ? 'all' : value); setActivitySubtypeFilter('all'); setActivityMenuOpen(open ? null : value); }} aria-expanded={open} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '8px 10px', borderRadius: '9px 0 0 9px', border: `1px solid ${active ? dot : '#2a3852'}`, borderRight: 'none', background: active ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }}></span>{label}</button>
-                                    <button onClick={() => setActivityMenuOpen(open ? null : value)} aria-label={`Open ${label} filters`} style={{ padding: '8px 8px', borderRadius: '0 9px 9px 0', border: `1px solid ${active ? dot : '#2a3852'}`, background: active ? '#162036' : '#0d1527', color: '#94a3b8', cursor: 'pointer' }}><i className={`fas fa-chevron-${open ? 'up' : 'down'}`} style={{ fontSize: '9px' }}></i></button>
-                                    {open && (
-                                        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 120, width: value === 'meeting' ? 266 : 220, padding: '12px', borderRadius: '10px', border: '1px solid #2a3852', background: '#171a23', boxShadow: '0 14px 32px rgba(0,0,0,.4)' }}>
-                                            {value === 'meeting' ? (
-                                                <>
-                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, marginBottom: '8px' }}>Meeting</div>
-                                                    <div style={{ display: 'flex', border: '1px solid #334155', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
-                                                        {([['all','All'],['initial','Initial'],['followup','Follow-up']] as const).map(([key, text]) => <button key={key} onClick={() => { setMeetingSubtype(key); setActivityTypeFilter('meeting'); }} style={{ flex: 1, padding: '7px 6px', border: 'none', borderRight: key !== 'followup' ? '1px solid #334155' : 'none', background: meetingSubtype === key ? '#3b4252' : 'transparent', color: '#e2e8f0', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>{text}</button>)}
-                                                    </div>
-                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, marginBottom: '6px' }}>Status</div>
-                                                    <div style={{ display: 'grid', gap: '6px' }}>
-                                                        {(['Scheduled','Rescheduled','Completed','No show','Cancelled','Quarantined'] as const).map(status => {
-                                                            const checked = meetingStatusFilters.includes(status);
-                                                            return <label key={status} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#e2e8f0', cursor: 'pointer' }}>
-                                                                <input type="checkbox" checked={checked} onChange={() => setMeetingStatusFilters(current => checked ? current.filter(item => item !== status) : [...current, status])} style={{ accentColor: '#8b9cff' }} />
-                                                                <span>{status}</span>
-                                                            </label>;
-                                                        })}
-                                                    </div>
-                                                    <button onClick={() => { setMeetingStatusFilters([]); setStatusFilter('all'); }} style={{ marginTop: '8px', border: 'none', background: 'transparent', color: '#60a5fa', fontSize: '10px', fontWeight: 800, cursor: 'pointer', padding: 0 }}>Clear status filters</button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, marginBottom: '8px' }}>{label.replace(/s$/, '')}</div>
-                                                    <select value={value === 'callback' ? callbackSubtype : followupSubtype} onChange={(e) => { setActivityTypeFilter(value); value === 'callback' ? setCallbackSubtype(e.target.value) : setFollowupSubtype(e.target.value); }} style={{ width: '100%', height: '32px', borderRadius: '7px', border: '1px solid #334155', background: '#0d1527', color: '#e2e8f0', fontSize: '11px', padding: '0 8px' }}>
-                                                        <option value="all">All {value === 'callback' ? 'Callback Kinds' : 'Follow-up Types'}</option>
-                                                        {Array.from(new Set(filteredAppointments.filter(appt => getActivityKind(appt) === value).map(appt => value === 'callback' ? (appt.callbackKind || 'Callback') : (appt.followUpType || 'Follow-up')))).sort().map(option => <option key={option} value={option}>{option}</option>)}
-                                                    </select>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                        <button onClick={() => { setActivityTypeFilter('all'); setActivitySubtypeFilter('all'); }} aria-pressed={activityTypeFilter === 'all'} style={{ padding: '7px 11px', borderRadius: '8px', border: `1px solid ${activityTypeFilter === 'all' ? '#64748b' : '#2a3852'}`, background: activityTypeFilter === 'all' ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>All</button>
+                        {([['meeting', 'Meetings', '#8b9cff'], ['callback', 'Callbacks', '#fbbf24'], ['followup', 'Follow-ups', '#34d399']] as const).map(([value, label, dot]) => (
+                            <button key={value} onClick={() => { setActivityTypeFilter(activityTypeFilter === value ? 'all' : value); setActivitySubtypeFilter('all'); }} aria-pressed={activityTypeFilter === value} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '7px 11px', borderRadius: '8px', border: `1px solid ${activityTypeFilter === value ? dot : '#2a3852'}`, background: activityTypeFilter === value ? '#162036' : '#0d1527', color: '#e2e8f0', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }}></span>{label}</button>
+                        ))}
                     </div>
+                    {activityTypeFilter !== 'all' && activityTypeFilter !== 'meeting' && (
+                        <select
+                            value={activitySubtypeFilter}
+                            onChange={(e) => setActivitySubtypeFilter(e.target.value)}
+                            aria-label={`${activityTypeFilter} subtype`}
+                            style={{ height: '32px', marginBottom: '10px', padding: '0 10px', borderRadius: '8px', border: '1px solid #1e293b', background: '#090e1a', color: '#f8fafc', fontSize: '11px' }}
+                        >
+                            <option value="all">All {activityTypeFilter === 'callback' ? 'Callback Kinds' : 'Follow-up Types'}</option>
+                            {Array.from(new Set(filteredAppointments.map(appt => activityTypeFilter === 'callback' ? (appt.callbackKind || 'Callback') : (appt.followUpType || 'Follow-up')))).sort().map(value => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                    )}
                     <div style={{ background: '#0d1527', border: '1px solid #1a2744', borderRadius: '14px', overflow: 'hidden' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '14px 16px', borderBottom: '1px solid #1a2744', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: '12px', color: '#94a3b8' }}>Showing <strong style={{ color: '#f8fafc' }}>{sortedListAppointments.length}</strong> activities</div>
