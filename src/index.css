@@ -423,131 +423,117 @@ body.light-theme .us-timezone-bar {
 }
 
 /* ============================================================
-   LIVE CONNECTION STATUS
-   Fixed, unobtrusive right-side monitor. Metrics are revealed on
-   hover/focus and never intercept normal application controls.
+   REAL-TIME CONNECTION QUALITY
+   Positioned immediately above Tools & Settings. The trigger is
+   compact; the metrics remain hidden until hover/focus so the
+   sidebar keeps its existing density.
    ============================================================ */
+.sidebar-connection-area {
+    padding: 8px 12px 7px;
+    border-top: 1px solid #0f1a2e;
+    position: relative;
+    z-index: 8;
+}
 .connection-status {
-    position: fixed;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 75;
+    position: relative;
+    width: 100%;
+}
+.connection-status-trigger {
+    width: 100%;
+    min-height: 34px;
     display: flex;
     align-items: center;
-    font-family: inherit;
-}
-.connection-status__trigger {
-    width: 44px;
-    min-height: 112px;
-    padding: 12px 8px;
-    border: 1px solid rgba(71,85,105,.5);
-    border-radius: 14px;
-    background: rgba(6,11,23,.68);
-    backdrop-filter: blur(12px) saturate(135%);
-    -webkit-backdrop-filter: blur(12px) saturate(135%);
-    box-shadow: 0 10px 28px rgba(0,0,0,.24);
+    gap: 9px;
+    padding: 7px 10px;
+    border: 1px solid rgba(51, 65, 85, .72);
+    border-radius: 9px;
+    background: rgba(15, 23, 42, .72);
     color: #cbd5e1;
     cursor: default;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    text-align: left;
+    transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
-.connection-status__bars {
-    height: 31px;
-    display: flex;
+.connection-status-trigger:hover,
+.connection-status-trigger:focus-visible {
+    background: rgba(20, 30, 50, .9);
+    border-color: rgba(100, 116, 139, .85);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, .08);
+}
+.connection-signal {
+    height: 19px;
+    display: inline-flex;
     align-items: flex-end;
-    gap: 3px;
+    gap: 2px;
+    flex-shrink: 0;
 }
-.connection-status__bar {
-    width: 5px;
-    border-radius: 2px;
-    background: rgba(100,116,139,.28);
-    transition: background .2s ease, opacity .2s ease, transform .2s ease;
+.connection-bar {
+    width: 4px;
+    min-height: 7px;
+    border-radius: 2px 2px 1px 1px;
+    background: #334155;
+    opacity: .45;
+    transition: background .2s ease, opacity .2s ease, box-shadow .2s ease;
 }
-.connection-status__bar.is-active { background: currentColor; }
-.connection-status--excellent { color: #22c55e; }
-.connection-status--good { color: #22c55e; }
-.connection-status--fair { color: #eab308; }
-.connection-status--poor { color: #ef4444; }
-.connection-status__state {
-    font-size: 8px;
-    line-height: 1;
-    font-weight: 800;
-    letter-spacing: .04em;
-    writing-mode: vertical-rl;
-    text-transform: uppercase;
-}
-.connection-status--poor .connection-status__trigger { border-color: rgba(239,68,68,.48); }
-.connection-status--fair .connection-status__trigger { border-color: rgba(234,179,8,.4); }
-.connection-status--excellent .connection-status__indicator,
-.connection-status--good .connection-status__indicator { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,.65); }
-.connection-status--fair .connection-status__indicator { background: #eab308; box-shadow: 0 0 8px rgba(234,179,8,.55); }
-.connection-status--poor .connection-status__indicator { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,.6); }
-.connection-status__popover {
+.connection-status--4 .connection-bar.is-filled,
+.connection-status--3 .connection-bar.is-filled { background: #22c55e; opacity: 1; box-shadow: 0 0 7px rgba(34,197,94,.3); }
+.connection-status--2 .connection-bar.is-filled { background: #eab308; opacity: 1; box-shadow: 0 0 7px rgba(234,179,8,.25); }
+.connection-status--1 .connection-bar.is-filled,
+.connection-status--lost .connection-bar.is-filled { background: #ef4444; opacity: 1; box-shadow: 0 0 7px rgba(239,68,68,.3); }
+.connection-status-text { font-size: 11px; font-weight: 700; color: #94a3b8; }
+.connection-status--4 .connection-status-text,
+.connection-status--3 .connection-status-text { color: #86efac; }
+.connection-status--2 .connection-status-text { color: #fde047; }
+.connection-status--1 .connection-status-text,
+.connection-status--lost .connection-status-text { color: #fca5a5; }
+.connection-status-popover {
     position: absolute;
-    right: 54px;
-    top: 50%;
-    transform: translateY(-50%) translateX(8px);
-    width: 244px;
-    padding: 13px;
-    border: 1px solid rgba(71,85,105,.56);
-    border-radius: 13px;
-    background: rgba(8,14,30,.96);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 18px 44px rgba(0,0,0,.38);
+    left: calc(100% + 8px);
+    bottom: 0;
+    width: 300px;
+    padding: 12px;
+    border: 1px solid rgba(71, 85, 105, .72);
+    border-radius: 12px;
+    background: rgba(7, 13, 26, .97);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 18px 45px rgba(0,0,0,.42);
+    color: #e2e8f0;
     opacity: 0;
     visibility: hidden;
+    transform: translateY(4px);
     pointer-events: none;
-    transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
-    color: #cbd5e1;
+    transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
 }
-.connection-status:hover .connection-status__popover,
-.connection-status:focus-within .connection-status__popover,
-.connection-status__popover.is-open {
+.connection-status:hover .connection-status-popover,
+.connection-status:focus-within .connection-status-popover {
     opacity: 1;
     visibility: visible;
-    transform: translateY(-50%) translateX(0);
+    transform: translateY(0);
+    pointer-events: auto;
 }
-.connection-status__popover-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding-bottom: 10px;
-    margin-bottom: 9px;
-    border-bottom: 1px solid rgba(51,65,85,.55);
-}
-.connection-status__popover-header div { display: flex; flex-direction: column; gap: 3px; }
-.connection-status__popover-header strong { color: #f8fafc; font-size: 12px; }
-.connection-status__popover-header span:not(.connection-status__indicator) { color: #64748b; font-size: 9px; }
-.connection-status__indicator { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.connection-status__metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-.connection-status__metrics div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.connection-status__metrics span { color: #64748b; font-size: 9px; }
-.connection-status__metrics strong { color: #e2e8f0; font-size: 10px; font-variant-numeric: tabular-nums; }
-.connection-status__footer { margin-top: 10px; color: #475569; font-size: 8px; line-height: 1.35; }
-
+.connection-popover-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.connection-popover-title { font-size:12px; font-weight:800; }
+.connection-popover-state { font-size:10px; font-weight:800; }
+.connection-status--4 .connection-popover-state,
+.connection-status--3 .connection-popover-state { color:#4ade80; }
+.connection-status--2 .connection-popover-state { color:#facc15; }
+.connection-status--1 .connection-popover-state,
+.connection-status--lost .connection-popover-state { color:#f87171; }
+.connection-metrics-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.connection-metrics-grid > div { min-width:0; padding:7px 8px; border:1px solid rgba(51,65,85,.5); border-radius:8px; background:rgba(15,23,42,.68); }
+.connection-metrics-grid span { display:block; color:#64748b; font-size:9px; font-weight:700; margin-bottom:3px; }
+.connection-metrics-grid strong { display:block; color:#e2e8f0; font-size:11px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.connection-popover-note { margin-top:9px; color:#64748b; font-size:9px; line-height:1.35; }
+body.light-theme .connection-status-trigger { background:rgba(255,255,255,.72); border-color:rgba(148,163,184,.45); color:#334155; }
+body.light-theme .connection-status-popover { background:rgba(255,255,255,.97); border-color:rgba(148,163,184,.55); color:#0f172a; }
+body.light-theme .connection-metrics-grid > div { background:rgba(248,250,252,.9); border-color:rgba(148,163,184,.35); }
+body.light-theme .connection-metrics-grid strong { color:#0f172a; }
 @media (max-width: 1024px) {
-    .connection-status { right: 8px; }
+    .connection-status-popover { left: 0; bottom: calc(100% + 8px); }
 }
-@media (max-width: 640px) {
-    .connection-status { right: 7px; bottom: 12px; top: auto; transform: none; }
-    .connection-status__trigger { width: 40px; min-height: 92px; padding: 9px 7px; }
-    .connection-status__popover { right: 48px; width: min(230px, calc(100vw - 64px)); }
+@media (max-width: 420px) {
+    .connection-status-text { display:none; }
+    .connection-status-trigger { justify-content:center; }
+    .connection-status-popover { width:min(300px, calc(100vw - 32px)); }
 }
-body.light-theme .connection-status__trigger {
-    background: rgba(255,255,255,.76);
-    border-color: rgba(148,163,184,.48);
-    box-shadow: 0 10px 28px rgba(15,23,42,.12);
-}
-body.light-theme .connection-status__popover {
-    background: rgba(255,255,255,.97);
-    border-color: rgba(148,163,184,.5);
-    box-shadow: 0 18px 44px rgba(15,23,42,.16);
-}
-body.light-theme .connection-status__popover-header strong,
-body.light-theme .connection-status__metrics strong { color: #0f172a; }

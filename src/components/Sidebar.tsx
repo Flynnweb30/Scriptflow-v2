@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { Script, Appointment } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
+import { ConnectionStatus } from './ConnectionStatus';
 
 interface SidebarProps {
     activeTab: string;
@@ -482,6 +483,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             );
                         })
                     )}
+                </div>
+
+                {/* Real-time connection quality indicator */}
+                <div className="sidebar-connection-area" aria-label="Real-time internet connection status">
+                    <ConnectionStatus />
                 </div>
 
                 {/* Collapsible TOOLS & SETTINGS Section */}

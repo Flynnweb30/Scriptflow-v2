@@ -32,7 +32,6 @@ import { CallbackDueModal } from './components/CallbackDueModal';
 import { HistoryModal } from './components/HistoryModal';
 import { BrandMark } from './components/ui/BrandMark';
 import { USTimezoneBar } from './components/USTimezoneBar';
-import { ConnectionStatus } from './components/ConnectionStatus';
 
 export const App: React.FC = () => {
     // Navigation & UI State
@@ -315,7 +314,6 @@ export const App: React.FC = () => {
 
             {/* Main Content Area */}
             <USTimezoneBar />
-            <ConnectionStatus />
             <main 
                 className="main-content"
                 style={{
