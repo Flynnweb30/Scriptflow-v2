@@ -5,13 +5,21 @@ const initialMetrics = networkMonitor.getSnapshot();
 
 const formatMetric = (value: number | null, unit: string) => value === null ? '—' : `${value}${unit}`;
 
+const getQualityLabel = (metrics: NetworkMetrics) => {
+  if (!metrics.online || metrics.signal === 0) return 'Offline';
+  return ['Poor', 'Fair', 'Good', 'Excellent'][metrics.signal - 1] || 'Excellent';
+};
+
 export const NetworkStatus: React.FC = () => {
   const [metrics, setMetrics] = useState<NetworkMetrics>(initialMetrics);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => networkMonitor.subscribe(setMetrics), []);
 
-  const label = metrics.online ? `Internet connection: ${metrics.signal} of 4 bars` : 'Internet connection unavailable';
+  const quality = getQualityLabel(metrics);
+  const label = metrics.online
+    ? `Internet connection: ${quality}, ${metrics.signal} of 4 bars`
+    : 'Internet connection unavailable: 0 bars';
 
   return (
     <div
@@ -25,7 +33,7 @@ export const NetworkStatus: React.FC = () => {
     >
       <button
         type="button"
-        className="network-status-trigger"
+        className={`network-status-trigger network-quality-${metrics.signal}`}
         aria-label={label}
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
@@ -34,27 +42,27 @@ export const NetworkStatus: React.FC = () => {
           {[1, 2, 3, 4].map((bar) => <span key={bar} className="network-bar" />)}
         </span>
         <span className={`network-status-dot ${metrics.online ? 'is-online' : 'is-offline'}`} aria-hidden="true" />
-        <span className="network-status-label">{metrics.online ? 'Connection' : 'Offline'}</span>
+        <span className="network-status-label">{quality}</span>
       </button>
 
       {expanded && (
         <div className="network-status-popover" role="tooltip">
           <div className="network-status-heading">
-            <span>Network quality</span>
-            <span className={metrics.online ? 'network-online-text' : 'network-offline-text'}>
-              {metrics.online ? 'Live' : 'Offline'}
+            <span>Connection quality</span>
+            <span className={metrics.online ? `network-quality-text network-quality-text-${metrics.signal}` : 'network-offline-text'}>
+              {quality}
             </span>
           </div>
           <div className="network-metric-grid">
             <div><span>Round trip</span><strong>{formatMetric(metrics.rttMs, ' ms')}</strong></div>
             <div><span>Bandwidth</span><strong>{formatMetric(metrics.bandwidthMbps, ' Mbps')}</strong></div>
-            <div><span>Live internet loss</span><strong>{metrics.packetLossPercent.toFixed(1)}%</strong></div>
+            <div><span>Packet loss</span><strong>{metrics.packetLossPercent.toFixed(1)}%</strong></div>
             <div><span>Jitter</span><strong>{formatMetric(metrics.jitterMs, ' ms')}</strong></div>
+            <div><span>Stability</span><strong>{formatMetric(metrics.stabilityPercent, '%')}</strong></div>
             <div><span>Reconnects</span><strong>{metrics.reconnects}</strong></div>
-            <div><span>Samples</span><strong>{metrics.samples}</strong></div>
           </div>
           <div className="network-status-footnote">
-            Bandwidth is the browser's live network estimate. Loss and jitter are calculated from recent same-origin connectivity samples.
+            Metrics update automatically. Bandwidth uses the browser's live network estimate; packet loss and jitter are derived from recent connectivity checks. If a live call is active, these network metrics can help identify connection-related audio issues.
           </div>
         </div>
       )}

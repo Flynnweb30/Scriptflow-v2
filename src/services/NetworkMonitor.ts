@@ -5,6 +5,7 @@ export interface NetworkMetrics {
   bandwidthMbps: number | null;
   packetLossPercent: number;
   jitterMs: number | null;
+  stabilityPercent: number | null;
   reconnects: number;
   samples: number;
   failedSamples: number;
@@ -30,7 +31,10 @@ const getConnectionInfo = (): NetworkInformationLike | null => {
   return (navigator as Navigator & { connection?: NetworkInformationLike }).connection || null;
 };
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const round = (value: number, decimals = 1) => {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+};
 
 class NetworkMonitor {
   private listeners = new Set<NetworkListener>();
@@ -40,14 +44,17 @@ class NetworkMonitor {
   private totalSamples = 0;
   private failedSamples = 0;
   private reconnects = 0;
-  private connectionLost = false;
+  private connectionLost = typeof navigator !== 'undefined' ? !navigator.onLine : false;
   private metrics: NetworkMetrics = {
     online: typeof navigator === 'undefined' ? true : navigator.onLine,
-    signal: typeof navigator === 'undefined' || navigator.onLine ? 3 : 0,
+    // Start at 4 when the browser reports a healthy connection. The signal is
+    // refined after the first heartbeat instead of visually starting at 1–3.
+    signal: typeof navigator === 'undefined' || navigator.onLine ? 4 : 0,
     rttMs: null,
     bandwidthMbps: null,
     packetLossPercent: 0,
     jitterMs: null,
+    stabilityPercent: null,
     reconnects: 0,
     samples: 0,
     failedSamples: 0,
@@ -82,12 +89,12 @@ class NetworkMonitor {
   private handleOnline = () => {
     if (this.connectionLost) this.reconnects += 1;
     this.connectionLost = false;
-    this.update({ online: true, reconnects: this.reconnects });
+    this.update({ online: true, signal: 4, reconnects: this.reconnects });
     void this.sample();
   };
 
   private handleOffline = () => {
-    this.connectionLost = true;
+    if (!this.connectionLost) this.connectionLost = true;
     this.update({ online: false, signal: 0 });
   };
 
@@ -98,7 +105,7 @@ class NetworkMonitor {
 
   private getBandwidth(connection = getConnectionInfo()) {
     const downlink = connection?.downlink;
-    return typeof downlink === 'number' && Number.isFinite(downlink) && downlink >= 0 ? downlink : null;
+    return typeof downlink === 'number' && Number.isFinite(downlink) && downlink >= 0 ? round(downlink, 2) : null;
   }
 
   private calculateJitter() {
@@ -107,11 +114,19 @@ class NetworkMonitor {
     for (let i = 1; i < this.rttHistory.length; i += 1) {
       deltaSum += Math.abs(this.rttHistory[i] - this.rttHistory[i - 1]);
     }
-    return Math.round((deltaSum / (this.rttHistory.length - 1)) * 10) / 10;
+    return round(deltaSum / (this.rttHistory.length - 1), 1);
+  }
+
+  private calculateStability(loss: number, jitterMs: number | null) {
+    if (this.totalSamples === 0) return null;
+    const lossPenalty = Math.min(100, loss * 3);
+    const jitterPenalty = jitterMs === null ? 0 : Math.min(40, jitterMs / 2);
+    return round(Math.max(0, 100 - lossPenalty - jitterPenalty), 1);
   }
 
   private calculateSignal(online: boolean, rttMs: number | null, bandwidthMbps: number | null, loss: number) {
     if (!online) return 0 as const;
+    // Unknown metrics are treated as healthy until measurements prove otherwise.
     let score = 4;
     if (loss >= 10 || (rttMs !== null && rttMs > 300) || (bandwidthMbps !== null && bandwidthMbps < 1)) score = 1;
     else if (loss >= 5 || (rttMs !== null && rttMs > 150) || (bandwidthMbps !== null && bandwidthMbps < 3)) score = 2;
@@ -120,10 +135,14 @@ class NetworkMonitor {
   }
 
   private update(partial: Partial<NetworkMetrics>) {
+    const packetLossPercent = this.totalSamples ? round((this.failedSamples / this.totalSamples) * 100, 1) : 0;
+    const jitterMs = partial.jitterMs ?? this.metrics.jitterMs;
     this.metrics = {
       ...this.metrics,
       ...partial,
-      packetLossPercent: this.totalSamples ? Math.round((this.failedSamples / this.totalSamples) * 1000) / 10 : 0,
+      packetLossPercent,
+      jitterMs,
+      stabilityPercent: this.calculateStability(packetLossPercent, jitterMs),
       reconnects: this.reconnects,
       samples: this.totalSamples,
       failedSamples: this.failedSamples,
@@ -163,11 +182,13 @@ class NetworkMonitor {
 
       const bandwidthMbps = this.getBandwidth();
       const packetLossPercent = this.totalSamples ? (this.failedSamples / this.totalSamples) * 100 : 0;
+      const jitterMs = this.calculateJitter();
       this.update({
         online: true,
         rttMs,
         bandwidthMbps,
-        jitterMs: this.calculateJitter(),
+        jitterMs,
+        stabilityPercent: this.calculateStability(packetLossPercent, jitterMs),
         signal: this.calculateSignal(true, rttMs, bandwidthMbps, packetLossPercent),
       });
     } catch {
