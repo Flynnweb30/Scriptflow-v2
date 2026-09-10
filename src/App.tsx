@@ -32,10 +32,11 @@ import { CallbackDueModal } from './components/CallbackDueModal';
 import { HistoryModal } from './components/HistoryModal';
 import { BrandMark } from './components/ui/BrandMark';
 import { USTimezoneBar } from './components/USTimezoneBar';
+import { SpeedTest } from './components/SpeedTest';
 
 export const App: React.FC = () => {
     // Navigation & UI State
-    const [activeTab, setActiveTab] = useState<'scripts' | 'calendar' | 'analytics' | 'tasks' | 'closers' | 'transcript'>('scripts');
+    const [activeTab, setActiveTab] = useState<'scripts' | 'calendar' | 'analytics' | 'tasks' | 'closers' | 'transcript' | 'speedtest'>('scripts');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [currentScriptKey, setCurrentScriptKey] = useState<string>('opening');
@@ -408,6 +409,8 @@ export const App: React.FC = () => {
                             }}
                         />
                     )}
+
+                    {activeTab === 'speedtest' && <SpeedTest />}
                 </div>
             </main>
 

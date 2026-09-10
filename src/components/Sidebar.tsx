@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import { Script, Appointment } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
-import { ConnectionIndicator } from './ConnectionIndicator';
+import { ConnectionStatus } from './ConnectionStatus';
 
 interface SidebarProps {
     activeTab: string;
@@ -485,35 +485,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                 </div>
 
+                {/* Real-time connection quality indicator */}
+                <div className="sidebar-connection-area" aria-label="Real-time internet connection status">
+                    <ConnectionStatus />
+                </div>
+
                 {/* Collapsible TOOLS & SETTINGS Section */}
                 <div style={{ borderTop: '1px solid #0f1a2e', padding: '8px 12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button
-                            onClick={() => setToolsExpanded(!toolsExpanded)}
-                            style={{
-                                flex: 1,
-                                minWidth: 0,
-                                border: 'none',
-                                background: 'transparent',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '6px 4px',
-                                color: '#94a3b8',
-                                fontSize: '11.5px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                borderRadius: '6px'
-                            }}
-                        >
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                                <i className="fas fa-tools" style={{ color: '#06b6d4', fontSize: '12px' }}></i>
-                                <span style={{ letterSpacing: '0.05em' }}>TOOLS & SETTINGS</span>
-                            </span>
-                            <i className={`fas fa-chevron-${toolsExpanded ? 'down' : 'right'}`} style={{ fontSize: '9px', color: '#64748b' }}></i>
-                        </button>
-                        <ConnectionIndicator />
-                    </div>
+                    <button
+                        onClick={() => setToolsExpanded(!toolsExpanded)}
+                        style={{
+                            width: '100%',
+                            border: 'none',
+                            background: 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 4px',
+                            color: '#94a3b8',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            borderRadius: '6px'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <i className="fas fa-tools" style={{ color: '#06b6d4', fontSize: '12px' }}></i>
+                            <span style={{ letterSpacing: '0.05em' }}>TOOLS & SETTINGS</span>
+                        </div>
+                        <i className={`fas fa-chevron-${toolsExpanded ? 'down' : 'right'}`} style={{ fontSize: '9px', color: '#64748b' }}></i>
+                    </button>
 
                     {toolsExpanded && (
                         <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '6px' }}>
@@ -656,6 +657,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             >
                                 <i className="fas fa-file-import" style={{ width: '16px', color: '#38bdf8' }}></i>
                                 <span>Smart Multi-Import</span>
+                            </button>
+
+                            <button
+                                onClick={() => { setActiveTab('speedtest'); if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                                style={{
+                                    border: 'none',
+                                    background: activeTab === 'speedtest' ? '#1e293b' : 'transparent',
+                                    color: activeTab === 'speedtest' ? '#38bdf8' : '#cbd5e1',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    padding: '7px 10px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    textAlign: 'left'
+                                }}
+                            >
+                                <i className="fas fa-gauge-high" style={{ width: '16px', color: '#22d3ee' }}></i>
+                                <span>Speed Test</span>
                             </button>
 
                             <button
