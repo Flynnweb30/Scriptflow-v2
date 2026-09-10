@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './style.min.css';
+import './index.css';
 
 // Error handling for React 19
 const rootElement = document.getElementById('root');

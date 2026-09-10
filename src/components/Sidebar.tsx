@@ -3,7 +3,6 @@ import { User } from 'firebase/auth';
 import { Script, Appointment } from '../types';
 import { Utils } from '../utils/helpers';
 import { FirestoreService } from '../services/FirestoreService';
-import { NetworkStatus } from './NetworkStatus';
 
 interface SidebarProps {
     activeTab: string;
@@ -676,11 +675,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </button>
                         </div>
                     )}
-                </div>
-
-                {/* Live Network Status */}
-                <div className="sidebar-network-slot">
-                    <NetworkStatus />
                 </div>
 
                 {/* Sidebar Footer Notice */}
