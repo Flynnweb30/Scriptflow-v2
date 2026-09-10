@@ -79,7 +79,7 @@ app.use((req, res, next) => {
     "img-src 'self' data: https: http: blob:",
     "font-src 'self' data: https:",
     "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https:",
-    "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://*.google.com",
+    "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://*.google.com https://fast.com https://www.fast.com",
     "media-src 'self' https: blob:",
     "worker-src 'self' blob:",
     "object-src 'none'",
